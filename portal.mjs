@@ -11,6 +11,7 @@ function event(type,detail={}){state.events.push({at:new Date().toISOString(),ty
 function notice(text){$('globalNotice').textContent=text;$('globalNotice').hidden=false;clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>$('globalNotice').hidden=true,6000);}
 function show(stage,{save=true}={}){
  state.stage=stage;persist();document.querySelectorAll('.view').forEach(v=>v.hidden=v.dataset.step!==stage);
+ $('testBanner').hidden=!(TEST||state.serverTest);
  const pos={welcome:0,consent:1,instructions:2,prototype:2,questionnaire:3,complete:4}[stage]??0;
  document.querySelectorAll('#progress li').forEach((li,i)=>{li.classList.toggle('active',i===pos);li.classList.toggle('done',i<pos);if(i===pos)li.setAttribute('aria-current','step');else li.removeAttribute('aria-current');});
  document.querySelector('.shell').classList.toggle('task-open',stage==='prototype');
@@ -39,7 +40,7 @@ function buildForms(content){
  content.susItems.forEach((item,i)=>{const row=document.createElement('div');row.className='sus-row';const field=document.createElement('fieldset'),legend=document.createElement('legend');legend.textContent=(i+1)+'. '+item;field.append(legend);const scale=document.createElement('div');scale.className='scale';for(let n=1;n<=5;n++){const label=document.createElement('label'),input=document.createElement('input');input.type='radio';input.name='sus'+i;input.value=n;input.setAttribute('aria-label',`${n}${n===1?' Strongly disagree':n===5?' Strongly agree':''}`);label.append(input,document.createTextNode(n));scale.append(label);}const skip=document.createElement('label');skip.className='skip-answer';const input=document.createElement('input');input.type='radio';input.name='sus'+i;input.value='';skip.append(input,document.createTextNode('Skip'));scale.append(skip);field.append(scale);const anchors=document.createElement('div');anchors.className='scale-anchors';anchors.innerHTML='<span>1 · Strongly disagree</span><span>5 · Strongly agree</span>';field.append(anchors);row.append(field);$('susFields').append(row);});
 }
 function loadPlanner(){
- const src='prototype/?session='+encodeURIComponent(state.id)+(TEST?'&test=1':'');
+ const src='prototype/?session='+encodeURIComponent(state.id)+(TEST||state.serverTest?'&test=1':'');
  if(!$('planner').getAttribute('src'))$('planner').src=src;
  if(state.prototype?.runs?.length){$('toFeedback').disabled=false;$('taskHeading').textContent='Your plan is saved.';}
 }
@@ -69,7 +70,7 @@ $('consentForm').addEventListener('submit',async e=>{
  e.preventDefault();if(submitting)return;submitting=true;$('consentSubmit').disabled=true;$('consentError').textContent='Saving your consent privately…';
  const f=new FormData(e.currentTarget),consent={name:String(f.get('name')).trim(),uid:String(f.get('uid')).trim().toLowerCase(),eligible:f.get('eligible')==='on',agreed:f.get('agreed')==='on',media:Array.from({length:5},(_,i)=>f.get('media'+i)==='yes'),restrictions:String(f.get('restrictions')||''),test:TEST,infoVersion:VERSION,at:new Date().toISOString()};
  state.pendingCreate??={requestId:crypto.randomUUID(),requestToken:crypto.randomUUID()+crypto.randomUUID()};persist();
- try{const r=await api({action:'create',consent,...state.pendingCreate});state={...empty(),id:r.id,token:r.token,code:r.code,media:consent.media,savedAt:r.savedAt};event('consent-saved',{infoVersion:VERSION});e.target.reset();$('consentError').textContent='';show('instructions');}catch(error){$('consentError').textContent=error.message;}finally{submitting=false;$('consentSubmit').disabled=false;}
+ try{const r=await api({action:'create',consent,...state.pendingCreate});state={...empty(),id:r.id,token:r.token,code:r.code,media:consent.media,savedAt:r.savedAt,serverTest:r.test};event('consent-saved',{infoVersion:VERSION});e.target.reset();$('consentError').textContent='';show('instructions');}catch(error){$('consentError').textContent=error.message;}finally{submitting=false;$('consentSubmit').disabled=false;}
 });
 $('startOnline').addEventListener('click',()=>{state.experience='digital';event('route-chosen',{experience:'digital'});show('prototype');});
 $('skipOnline').addEventListener('click',()=>{if(!$('experienceConfirmed').checked){$('routeError').textContent='Confirm that the activity is finished, or that you have agreed with Adith to continue.';return;}state.experience=$('experienceRoute').value;event('route-chosen',{experience:state.experience});show('questionnaire');});
