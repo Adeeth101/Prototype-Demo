@@ -8,7 +8,7 @@ Try the complete flow with `?test=1`. TEST records are flagged and excluded from
 
 Welcome → information and consent → instructions → online activity **or** an activity with the researcher → optional questionnaire → confirmed saved receipt and interview handoff.
 
-The online planner has two rounds: unaided scheduling, then guided revision with feedback. The alternative route records physical prototype, researcher-led demonstration, or no prototype experience. The last route skips SUS. Instructions and questionnaire context refer to the prototype actually experienced; ten original SUS items are unchanged. Do not combine different experience routes as if they were equivalent conditions.
+The online planner uses twelve broad two-hour periods and equal-sized tokens. Its two short stages are an initial plan and optional revision with feedback. Continue to feedback is always available, including for unfinished plans. Only breakfast/morning, dinner/later day and washing-before-drying have timing rules; other activities are flexible. The alternative route records physical prototype, researcher-led demonstration, or no prototype experience. The last route skips SUS. Instructions and questionnaire context refer to the prototype actually experienced; ten original SUS items are unchanged. Do not combine different experience routes as if they were equivalent conditions.
 
 ## Data collection
 

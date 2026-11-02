@@ -23,7 +23,7 @@ function show(stage,{save=true}={}){
  if(save&&state.id&&['instructions','prototype','questionnaire'].includes(stage))scheduleSave();
 }
 async function api(body){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);try{let response;try{response=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:controller.signal});}catch{throw Error('Your response could not reach the study service. Your entries are still here. Keep this page open, check your connection, and ask Adith to check submission access before trying again.');}let result;try{result=await response.json();}catch{throw Error('The response service could not be reached. Keep this page open and try again.');}if(!response.ok)throw Error(result.error||'Could not save');return result;}finally{clearTimeout(timer);}}
-function payload(){return {version:VERSION,test:TEST,stage:['instructions','prototype','questionnaire','complete'].includes(state.stage)?state.stage:'instructions',experience:state.experience,events:clone(state.events),prototype:clone(state.prototype),questionnaire:clone(state.questionnaire),prototypeStopped:state.prototypeStopped||false};}
+function payload(){return {version:VERSION,test:TEST,stage:['instructions','prototype','questionnaire','complete'].includes(state.stage)?state.stage:'instructions',experience:state.experience,events:clone(state.events),prototype:clone(state.prototype),questionnaire:clone(state.questionnaire),previousPrototypeVersions:clone(state.previousPrototypeVersions||[]),prototypeStopped:state.prototypeStopped||false};}
 function scheduleSave(){if(!state.id)return;clearTimeout(saveTimer);saveTimer=setTimeout(()=>saveNow().catch(()=>{}),1000);}
 function saveNow(action='save'){
  clearTimeout(saveTimer);if(!state.id)return Promise.resolve();
@@ -40,8 +40,9 @@ function buildForms(content){
  content.susItems.forEach((item,i)=>{const row=document.createElement('div');row.className='sus-row';const field=document.createElement('fieldset'),legend=document.createElement('legend');legend.textContent=(i+1)+'. '+item;field.append(legend);const scale=document.createElement('div');scale.className='scale';for(let n=1;n<=5;n++){const label=document.createElement('label'),input=document.createElement('input');input.type='radio';input.name='sus'+i;input.value=n;input.setAttribute('aria-label',`${n}${n===1?' Strongly disagree':n===5?' Strongly agree':''}`);label.append(input,document.createTextNode(n));scale.append(label);}const skip=document.createElement('label');skip.className='skip-answer';const input=document.createElement('input');input.type='radio';input.name='sus'+i;input.value='';skip.append(input,document.createTextNode('Skip'));scale.append(skip);field.append(scale);const anchors=document.createElement('div');anchors.className='scale-anchors';anchors.innerHTML='<span>1 · Strongly disagree</span><span>5 · Strongly agree</span>';field.append(anchors);row.append(field);$('susFields').append(row);});
 }
 function loadPlanner(){
- const src='prototype/?session='+encodeURIComponent(state.id)+(TEST||state.serverTest?'&test=1':'');
+ const src='prototype/?board=coarse12-v1&session='+encodeURIComponent(state.id)+(TEST||state.serverTest?'&test=1':'');
  if(!$('planner').getAttribute('src'))$('planner').src=src;
+ if(state.prototype&&state.prototype.version!=='daylight-coarse12-2026-11-02-v1'){state.previousPrototypeVersions??=[];state.previousPrototypeVersions.push(state.prototype);state.prototype=null;event('prototype-model-changed',{to:'daylight-coarse12-2026-11-02-v1'});}
  if(state.prototype?.runs?.length){$('toFeedback').disabled=false;$('taskHeading').textContent='Your plan is saved.';}
 }
 const routeNames={digital:'Online prototype',physical:'Physical prototype with researcher',demonstration:'Researcher-led demonstration',none:'No prototype experience'};
@@ -74,13 +75,14 @@ $('consentForm').addEventListener('submit',async e=>{
 });
 $('startOnline').addEventListener('click',()=>{state.experience='digital';event('route-chosen',{experience:'digital'});show('prototype');});
 $('skipOnline').addEventListener('click',()=>{if(!$('experienceConfirmed').checked){$('routeError').textContent='Confirm that the activity is finished, or that you have agreed with Adith to continue.';return;}state.experience=$('experienceRoute').value;event('route-chosen',{experience:state.experience});show('questionnaire');});
-$('toFeedback').addEventListener('click',()=>{event('prototype-to-questionnaire');show('questionnaire');});
-$('leaveTask').addEventListener('click',()=>{if(!confirm('Stop the online activity and continue to feedback? Your unfinished plan will be kept as observed.'))return;state.prototypeStopped=true;event('prototype-stopped-early');show('questionnaire');});
+function goToFeedback(){state.prototypeStopped=!state.prototype?.runs?.length;event('prototype-to-questionnaire',{unfinished:state.prototypeStopped,baselineSaved:!!state.prototype?.baseline,activityCount:state.prototype?.schedule?.length||0});show('questionnaire');}
+$('toFeedback').addEventListener('click',goToFeedback);
+$('leaveTask').addEventListener('click',goToFeedback);
 window.addEventListener('message',e=>{
  if(e.origin!==location.origin||e.source!==$('planner').contentWindow||e.data?.source!=='daylight-prototype'||!state.id||state.experience!=='digital'||state.stage!=='prototype')return;
  const p=e.data.state;if(!Array.isArray(p?.schedule)||!Array.isArray(p?.events))return;
  state.prototype=p;persist();scheduleSave();
- if(p.baseline){$('taskHeading').textContent='Now explore a better time.';$('taskNote').textContent='Your first plan is saved. Revise it with live feedback, then finish and save.';}
+ if(p.baseline){$('taskHeading').textContent='Now explore a better time.';$('taskNote').textContent='Your first plan is saved. Explore a few changes with live feedback, or continue whenever you are ready.';}
  if(e.data.type==='prototype-complete'||p.runs?.length){$('toFeedback').disabled=false;$('taskHeading').textContent='Your plan is saved.';$('taskNote').textContent='Continue to the questionnaire when you are ready.';}
 });
 $('surveyForm').addEventListener('input',()=>updateSurveyDraft());

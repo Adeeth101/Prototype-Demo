@@ -1,10 +1,10 @@
-import {VERSION,LANES,SLOTS,INTENSITY,TASKS,BY_ID,POWER_TARGET,TOTAL_ENERGY,time,evaluate,canPlace,EXAMPLE} from './engine.mjs';
+import {VERSION,LANES,SLOTS,INTENSITY,SLOT_LABELS,MODEL,TASKS,BY_ID,POWER_TARGET,TOTAL_ENERGY,time,evaluate,canPlace,EXAMPLE} from './engine.mjs?v=coarse12-v1';
 const $=id=>document.getElementById(id);
 const EMBED_PARAMS=new URLSearchParams(location.search);
 const KEY='daylight-portal-prototype-'+(EMBED_PARAMS.get('session')||'standalone');
 const IS_TEST=EMBED_PARAMS.get('test')==='1';
 const clone=v=>JSON.parse(JSON.stringify(v));
-const fresh=(participant='TEST')=>({version:VERSION,participant,mode:participant==='TEST'?'feedback':'blind',phase:participant==='TEST'?'explore':'unaided',schedule:[],baseline:null,runs:[],events:[],startedAt:new Date().toISOString()});
+const fresh=(participant='TEST')=>({version:VERSION,model:clone(MODEL),participant,mode:participant==='TEST'?'feedback':'blind',phase:participant==='TEST'?'explore':'unaided',schedule:[],baseline:null,runs:[],events:[],startedAt:new Date().toISOString()});
 let state=fresh('participant'),selected=null,editing=null,dragged=null,toastTimer;
 try{const saved=JSON.parse(localStorage.getItem(KEY));if(saved?.version===VERSION&&Array.isArray(saved.schedule)&&Array.isArray(saved.events))state=saved;}catch{}
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch{toast('Browser storage is unavailable. Export this session before leaving.');}}
@@ -13,12 +13,12 @@ function record(type,detail={}){state.events.push({at:new Date().toISOString(),e
 function toast(message){$('toast').textContent=message;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),4200);}
 function intensityColor(value){return value<=.3?'#b7cf8d':value<=.55?'#d8d9aa':'#dba285';}
 function fmt(value,digits=2){return value.toFixed(digits);}
-function duration(t){return `${t.duration/2} h`;}
+function duration(t){return `${t.hours} h use`;}
 function chosen(){return selected?BY_ID[selected]:null;}
 
 function buildGrid(){
-  $('timeAxis').innerHTML='<span>LANES</span>'+Array.from({length:SLOTS},(_,s)=>`<span>${s%4===0?time(s):''}</span>`).join('');
-  $('gridBody').innerHTML=Array.from({length:LANES},(_,lane)=>`<div class="lane"><div class="lane-name">LANE ${lane+1}</div><div class="lane-cells" data-lane="${lane}">${Array.from({length:SLOTS},(_,slot)=>`<div class="slot ${slot>=20&&slot<32?'daylight':slot>=34&&slot<42?'evening':''}" data-lane="${lane}" data-slot="${slot}" title="Lane ${lane+1}, ${time(slot)}"></div>`).join('')}</div></div>`).join('');
+  $('timeAxis').innerHTML='<span>LANES</span>'+Array.from({length:SLOTS},(_,s)=>`<span><strong>${SLOT_LABELS[s]}</strong><small>${time(s)}</small></span>`).join('');
+  $('gridBody').innerHTML=Array.from({length:LANES},(_,lane)=>`<div class="lane"><div class="lane-name">LANE ${lane+1}</div><div class="lane-cells" data-lane="${lane}">${Array.from({length:SLOTS},(_,slot)=>`<div class="slot ${slot>=5&&slot<=7?'daylight':slot===9||slot===10?'evening':''}" data-lane="${lane}" data-slot="${slot}" title="Lane ${lane+1}, ${time(slot)}"></div>`).join('')}</div></div>`).join('');
   $('gridBody').addEventListener('click',event=>{const cell=event.target.closest('.slot');if(cell&&selected)place(selected,Number(cell.dataset.slot),Number(cell.dataset.lane));});
   $('gridBody').addEventListener('dragover',event=>{if(event.target.closest('.slot'))event.preventDefault();});
   $('gridBody').addEventListener('drop',event=>{
@@ -40,7 +40,7 @@ function renderLibrary(){
     button.className='task-card'+(placement?' placed':'')+(selected===task.id?' active':'');
     button.style.setProperty('--task-color',task.color);button.draggable=true;
     button.setAttribute('aria-pressed',String(selected===task.id));
-    button.innerHTML=`<div class="task-title">${task.name}<span>${placement?'✓':'+'}</span></div><div class="task-meta">${duration(task)} &nbsp;·&nbsp; ${task.kw<.1?Math.round(task.kw*1000)+' W':task.kw+' kW'} &nbsp;·&nbsp; ${fmt(task.kw*task.duration/2)} kWh</div><div class="task-rule">${task.rule}</div>`;
+    button.innerHTML=`<div class="task-title">${task.name}<span>${placement?'✓':'+'}</span></div><div class="task-meta">One token &nbsp;·&nbsp; ${fmt(task.energy)} kWh per use</div><div class="task-rule">${task.rule}</div>`;
     button.title=task.rule+'. '+task.note;
     button.addEventListener('click',()=>{selected=selected===task.id?null:task.id;renderLibrary();renderHint();});
     button.addEventListener('dblclick',()=>openEditor(task.id));
@@ -50,7 +50,7 @@ function renderLibrary(){
   }
 }
 function renderHint(){
-  const task=chosen();$('selectionHint').textContent=task?`${task.name} selected · ${task.rule}. Click a lane, or double-click its library card to use the time editor.`:'Choose any activity on the left to begin. Each column is 30 minutes.';
+  const task=chosen();$('selectionHint').textContent=task?`${task.name} selected · ${task.rule}. Click a lane, or double-click its library card to use the time editor.`:'Choose any activity on the left to begin. Each column is a broad period. One token per position.';
 }
 function renderEvents(result){
   document.querySelectorAll('#gridBody > .event').forEach(node=>node.remove());
@@ -65,8 +65,8 @@ function renderEvents(result){
     event.style.width=`${available*task.duration/SLOTS-2}px`;event.style.top=`${p.lane*64+10}px`;
     const average=INTENSITY.slice(p.start,p.start+task.duration).reduce((a,b)=>a+b,0)/task.duration;
     event.style.setProperty('--intensity-color',intensityColor(average));
-    event.innerHTML=`<strong>${task.short}</strong><small>${time(p.start)} · ${task.kw<.1?Math.round(task.kw*1000)+' W':task.kw+' kW'}</small>`;
-    event.title=`${task.name}, lane ${p.lane+1}, ${time(p.start)}–${time(p.start+task.duration)}. Click to edit.`;
+    event.innerHTML=`<strong>${task.short}</strong><small>${fmt(task.energy)} kWh</small>`;
+    event.title=`${task.name}, lane ${p.lane+1}, ${SLOT_LABELS[p.start]} (${time(p.start)}). Click to move this token.`;
     event.setAttribute('aria-label',event.title);event.draggable=true;
     event.addEventListener('click',()=>openEditor(task.id));
     event.addEventListener('dragstart',e=>{dragged=task.id;e.dataTransfer.setData('text/plain',task.id);e.dataTransfer.effectAllowed='move';});
@@ -81,14 +81,14 @@ function renderFeedback(result){
   $('powerStat').innerHTML=blind?'<span class="blind-value">Hidden until the end</span>':`${fmt(result.peak)}<span>kW</span>`;
   $('energyStat').innerHTML=blind?'<span class="blind-value">Hidden until the end</span>':`${fmt(result.energy)}<span>kWh</span>`;
   $('carbonNote').textContent=blind?'No live sustainability feedback in this run.':result.complete?'Example grid model, not measured household emissions.':'Scheduled activities only · complete all ten to compare.';
-  $('powerNote').textContent=blind?'No live demand feedback in this run.':result.peak>POWER_TARGET?`${result.overTargetSlots} half-hour blocks exceed the ${POWER_TARGET} kW scenario target.`:`Within the ${POWER_TARGET} kW scenario target so far.`;
+  $('powerNote').textContent=blind?'No live demand feedback in this run.':result.peak>POWER_TARGET?`${result.overTargetSlots} broad periods exceed the ${POWER_TARGET} kW scenario target.`:`Within the ${POWER_TARGET} kW scenario target so far.`;
   $('constraintBox').classList.toggle('bad',!blind&&result.issues.length>0);
-  if(blind)$('constraintBox').innerHTML='<span class="check-symbol">○</span><div><strong>Unaided run</strong><p>Use the activity rules. Save the first run to reveal the result.</p></div>';
+  if(blind)$('constraintBox').innerHTML='<span class="check-symbol">○</span><div><strong>Unaided run</strong><p>Try a plan, then reveal feedback whenever you are ready.</p></div>';
   else if(result.issues.length)$('constraintBox').innerHTML=`<span class="check-symbol">!</span><div><strong>${result.issues.length} things to resolve</strong><p>${result.issues.slice(0,2).map(i=>i.message).join(' ')}</p></div>`;
-  else if(result.missing.length)$('constraintBox').innerHTML=`<span class="check-symbol">○</span><div><strong>${result.missing.length} activities still need a place</strong><p>Every activity must be included. Each one keeps the same duration and energy.</p></div>`;
+  else if(result.missing.length)$('constraintBox').innerHTML=`<span class="check-symbol">○</span><div><strong>${result.missing.length} activities still need a place</strong><p>Every activity must be included. Every token keeps the same energy wherever you place it. You can continue with an unfinished plan.</p></div>`;
   else $('constraintBox').innerHTML='<span class="check-symbol">✓</span><div><strong>Every household need is met</strong><p>You can keep exploring the timing or save this version.</p></div>';
-  $('finishButton').disabled=blind?!result.complete:!result.valid;
-  $('finishButton').innerHTML=blind?'Save unaided run &amp; reveal <span>↗</span>':'Finish &amp; save this run <span>↗</span>';
+  $('finishButton').disabled=result.scheduled===0;
+  $('finishButton').innerHTML=blind?'Reveal feedback <span>↗</span>':'Save this version <span>↗</span>';
   $('profileChart').innerHTML=INTENSITY.map((value,i)=>`<div class="profile-bar" style="--profile-color:${intensityColor(value)};--intensity-height:${value/.8*100}%" title="${time(i)}: ${value.toFixed(2)} kg CO₂e/kWh, illustrative"></div>`).join('');
   const scale=Math.max(7,result.peak);
   $('demandChart').style.setProperty('--target-position',`${POWER_TARGET/scale*100}%`);
@@ -104,13 +104,13 @@ function renderComparison(result){
   const first=evaluate(state.baseline.schedule);
   const comparable=first.valid&&result.valid;
   const change=first.emissions-result.emissions;
-  box.innerHTML=`<strong>Your first run stays saved.</strong><br>First plan: ${fmt(first.emissions)} kg CO₂e · ${fmt(first.peak)} kW peak · ${first.valid?'all needs met':'incomplete or timing rules not met'}.<br>Current plan: ${fmt(result.emissions)} kg CO₂e · ${fmt(result.peak)} kW peak.<br>${comparable?`${change>=0?'Lower':'Higher'} modelled emissions by ${fmt(Math.abs(change))} kg CO₂e (${fmt(Math.abs(change)/first.emissions*100,1)}%). Both complete schedules use ${fmt(TOTAL_ENERGY,3)} kWh.`:'Complete a valid schedule before interpreting the difference. If the first plan broke requirements, compare feasibility as well as emissions.'}<br><span class="small-note">This is a before-and-after revision. Practice and the revealed information can both contribute.</span>`;
+  box.innerHTML=`<strong>Your first run stays saved.</strong><br>First plan: ${fmt(first.emissions)} kg CO₂e · ${fmt(first.peak)} kW highest slot average · ${first.valid?'all needs met':'incomplete or timing rules not met'}.<br>Current plan: ${fmt(result.emissions)} kg CO₂e · ${fmt(result.peak)} kW highest slot average.<br>${comparable?`${change>=0?'Lower':'Higher'} modelled emissions by ${fmt(Math.abs(change))} kg CO₂e (${fmt(Math.abs(change)/first.emissions*100,1)}%). Both complete schedules use ${fmt(TOTAL_ENERGY,3)} kWh.`:'Complete a valid schedule before interpreting the difference. If the first plan broke requirements, compare feasibility as well as emissions.'}<br><span class="small-note">This is a before-and-after revision. Practice and the revealed information can both contribute.</span>`;
 }
 function render(){const result=evaluate(state.schedule);renderLibrary();renderHint();renderEvents(result);renderFeedback(result);$('participant').value=state.participant;}
 function openEditor(id){
   editing=id;const task=BY_ID[id],placement=state.schedule.find(p=>p.id===id);
   $('editorTitle').textContent=task.name;$('editorRule').textContent=task.rule+'. '+task.note;
-  $('startSelect').innerHTML=Array.from({length:SLOTS-task.duration+1},(_,s)=>`<option value="${s}">${time(s)}</option>`).join('');
+  $('startSelect').innerHTML=Array.from({length:SLOTS-task.duration+1},(_,s)=>`<option value="${s}">${SLOT_LABELS[s]} · ${time(s)}</option>`).join('');
   $('laneSelect').innerHTML=Array.from({length:LANES},(_,i)=>`<option value="${i}">Lane ${i+1}</option>`).join('');
   $('startSelect').value=placement?.start??task.fixed??task.windows[0][0];$('laneSelect').value=placement?.lane??0;
   $('removeTask').disabled=!placement;$('editDialog').showModal();
@@ -119,10 +119,10 @@ function captureBaseline(){
   if(state.baseline){toast('The first run is already saved and will not be overwritten. Export it or start a new participant session.');return;}
   state.baseline={at:new Date().toISOString(),schedule:clone(state.schedule),metrics:evaluate(state.schedule),source:'online-unaided-grid',phase:state.phase};
   record('baseline-frozen',{baseline:clone(state.baseline)});state.mode='feedback';state.phase='guided';persist();render();document.getElementById('roundBanner').textContent='ROUND 2 · Your first plan is saved. Use the feedback to improve timing while meeting every household need.';notifyParent('baseline-saved');
-  toast('First run saved. Feedback is now visible. Start guided revision when ready.');
+  toast('First run saved. Feedback is now visible. Move a few tokens to explore the feedback, or continue to the questionnaire.');
 }
 function exportSession(){
-  record('export-requested');const payload={...clone(state),profile:{kind:'illustrative-not-live',unit:'kgCO2e/kWh',halfHourIntensity:INTENSITY},tasks:clone(TASKS),currentMetrics:evaluate(state.schedule),researchNote:'Paper-first plus digital guided revision. Order, learning, information and medium are confounded; do not claim an isolated causal feedback effect.'};
+  record('export-requested');const payload={...clone(state),profile:{kind:'illustrative-not-live',unit:'kgCO2e/kWh',broadSlotIntensity:INTENSITY},tasks:clone(TASKS),currentMetrics:evaluate(state.schedule),researchNote:'Paper-first plus digital guided revision. Order, learning, information and medium are confounded; do not claim an isolated causal feedback effect.'};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`daylight-${state.participant}-${new Date().toISOString().replace(/[:.]/g,'-')}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Session exported. Keep the original JSON as raw study evidence.');
 }
 $('applyEdit').addEventListener('click',()=>{if(place(editing,Number($('startSelect').value),Number($('laneSelect').value)))$('editDialog').close();});
@@ -136,7 +136,7 @@ $('exampleButton').addEventListener('click',()=>{if(state.participant!=='TEST'){
 $('resetButton').addEventListener('click',()=>{if(state.schedule.length&&!confirm('Clear the working grid? The original actions and saved first run remain in your export.'))return;record('before-clear');state.schedule=[];selected=null;record('clear');render();});
 $('captureButton').addEventListener('click',captureBaseline);
 $('guidedButton').addEventListener('click',()=>{if(!state.baseline)return;state.schedule=clone(state.baseline.schedule);state.mode='feedback';state.phase='guided';record('guided-revision-start');render();toast('Revise your first plan with live feedback. Its original version stays saved.');});
-$('finishButton').addEventListener('click',()=>{if(state.mode==='blind'){captureBaseline();return;}const metrics=evaluate(state.schedule);if(!metrics.valid)return;const run={at:new Date().toISOString(),phase:state.phase,mode:state.mode,schedule:clone(state.schedule),metrics};state.runs.push(run);record('finish-run',{run});render();notifyParent('prototype-complete');document.getElementById('roundBanner').textContent='PLAN COMPLETE · Your final plan is saved. Use Continue to questionnaire above the planner.';toast('Plan complete. Continue to the questionnaire above.');});
+$('finishButton').addEventListener('click',()=>{if(state.mode==='blind'){captureBaseline();return;}const metrics=evaluate(state.schedule);const run={at:new Date().toISOString(),phase:state.phase,mode:state.mode,schedule:clone(state.schedule),metrics};state.runs.push(run);record('finish-run',{run});render();notifyParent('prototype-complete');document.getElementById('roundBanner').textContent='PLAN SAVED · Your current version is saved, including any unmet rules. Use Continue to questionnaire above the planner.';toast('Version saved. Continue to feedback whenever you are ready.');});
 $('exportButton').addEventListener('click',exportSession);
 $('participant').addEventListener('change',event=>{
   const code=event.target.value;
