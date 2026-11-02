@@ -1,7 +1,8 @@
 import {API_URL,VERSION} from './config.mjs';
 const $=id=>document.getElementById(id);
 const TEST=new URLSearchParams(location.search).get('test')==='1';
-const KEY=VERSION+(TEST?'-test':'-participant');
+const TEST_RUN=TEST?new URLSearchParams(location.search).get('run'):null;
+const KEY=VERSION+(TEST?'-test'+(TEST_RUN?'-'+TEST_RUN.slice(0,60):''):'-participant');
 const clone=v=>JSON.parse(JSON.stringify(v));
 const empty=()=>({version:VERSION,test:TEST,stage:'welcome',id:null,token:null,code:null,revision:0,events:[],experience:null,prototype:null,questionnaire:null,media:[],savedAt:null});
 let state=empty(),saveTimer,noticeTimer,saving=Promise.resolve(),submitting=false,loadedContent;
@@ -40,9 +41,9 @@ function buildForms(content){
  content.susItems.forEach((item,i)=>{const row=document.createElement('div');row.className='sus-row';const field=document.createElement('fieldset'),legend=document.createElement('legend');legend.textContent=(i+1)+'. '+item;field.append(legend);const scale=document.createElement('div');scale.className='scale';for(let n=1;n<=5;n++){const label=document.createElement('label'),input=document.createElement('input');input.type='radio';input.name='sus'+i;input.value=n;input.setAttribute('aria-label',`${n}${n===1?' Strongly disagree':n===5?' Strongly agree':''}`);label.append(input,document.createTextNode(n));scale.append(label);}const skip=document.createElement('label');skip.className='skip-answer';const input=document.createElement('input');input.type='radio';input.name='sus'+i;input.value='';skip.append(input,document.createTextNode('Skip'));scale.append(skip);field.append(scale);const anchors=document.createElement('div');anchors.className='scale-anchors';anchors.innerHTML='<span>1 · Strongly disagree</span><span>5 · Strongly agree</span>';field.append(anchors);row.append(field);$('susFields').append(row);});
 }
 function loadPlanner(){
- const src='prototype/?board=coarse12-v1&session='+encodeURIComponent(state.id)+(TEST||state.serverTest?'&test=1':'');
+ const src='prototype/?board=three-lanes-v2&session='+encodeURIComponent(state.id)+(TEST||state.serverTest?'&test=1':'');
  if(!$('planner').getAttribute('src'))$('planner').src=src;
- if(state.prototype&&state.prototype.version!=='daylight-coarse12-2026-11-02-v1'){state.previousPrototypeVersions??=[];state.previousPrototypeVersions.push(state.prototype);state.prototype=null;event('prototype-model-changed',{to:'daylight-coarse12-2026-11-02-v1'});}
+ if(state.prototype&&state.prototype.version!=='daylight-three-lanes-2026-11-02-v2'){state.previousPrototypeVersions??=[];state.previousPrototypeVersions.push(state.prototype);state.prototype=null;event('prototype-model-changed',{to:'daylight-three-lanes-2026-11-02-v2'});}
  if(state.prototype?.runs?.length){$('toFeedback').disabled=false;$('taskHeading').textContent='Your plan is saved.';}
 }
 const routeNames={digital:'Online prototype',physical:'Physical prototype with researcher',demonstration:'Researcher-led demonstration',none:'No prototype experience'};
@@ -81,7 +82,7 @@ $('leaveTask').addEventListener('click',goToFeedback);
 window.addEventListener('message',e=>{
  if(e.origin!==location.origin||e.source!==$('planner').contentWindow||e.data?.source!=='daylight-prototype'||!state.id||state.experience!=='digital'||state.stage!=='prototype')return;
  const p=e.data.state;if(!Array.isArray(p?.schedule)||!Array.isArray(p?.events))return;
- state.prototype=p;persist();scheduleSave();
+ state.prototype=p;if(Number.isFinite(e.data.height))$('planner').style.height=Math.min(2600,Math.max(900,e.data.height+20))+'px';persist();scheduleSave();
  if(p.baseline){$('taskHeading').textContent='Now explore a better time.';$('taskNote').textContent='Your first plan is saved. Explore a few changes with live feedback, or continue whenever you are ready.';}
  if(e.data.type==='prototype-complete'||p.runs?.length){$('toFeedback').disabled=false;$('taskHeading').textContent='Your plan is saved.';$('taskNote').textContent='Continue to the questionnaire when you are ready.';}
 });

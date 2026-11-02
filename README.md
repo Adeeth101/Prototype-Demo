@@ -8,7 +8,7 @@ Try the complete flow with `?test=1`. TEST records are flagged and excluded from
 
 Welcome → information and consent → instructions → online activity **or** an activity with the researcher → optional questionnaire → confirmed saved receipt and interview handoff.
 
-The online planner uses twelve broad two-hour periods and equal-sized tokens. Its two short stages are an initial plan and optional revision with feedback. Continue to feedback is always available, including for unfinished plans. Only breakfast/morning, dinner/later day and washing-before-drying have timing rules; other activities are flexible. The alternative route records physical prototype, researcher-led demonstration, or no prototype experience. The last route skips SUS. Instructions and questionnaire context refer to the prototype actually experienced; ten original SUS items are unchanged. Do not combine different experience routes as if they were equivalent conditions.
+The online planner uses twelve broad two-hour periods and three meaningful attention lanes: Personal, Household and Background. Longer uses span two consecutive periods; Background appliances can overlap. There are ten core activities, eight optional extras, and fixed fridge/Wi-Fi loads. Its two short stages are an initial plan and optional revision with feedback. Continue to feedback is always available, including for unfinished plans. Breakfast/morning, dinner/later day and washing-before-drying remain the timing rules. Personal/Household each allow one activity per period; unattended Background activities can overlap. Lane choice records the participant’s attention/household context, not power intensity. The alternative route records physical prototype, researcher-led demonstration, or no prototype experience. The last route skips SUS. Instructions and questionnaire context refer to the prototype actually experienced; ten original SUS items are unchanged. Do not combine different experience routes as if they were equivalent conditions.
 
 ## Data collection
 
@@ -33,7 +33,7 @@ GitHub Pages publishes the root of `main` using the built-in Pages build. `.noje
 
 ## Study limits
 
-Power, intensity profile and 4 kW soft target are illustrative assumptions, not live grid readings, a forecast, or an electrical safety rating. Every complete schedule uses 10.298 kWh; timing changes modelled emissions and peak demand. The same-task fixed-order online revision includes practice and revealed information and does not isolate a causal feedback effect. Physical/demonstration sessions must be interpreted according to the actual procedure used.
+Power, intensity profile and 4 kW soft target are illustrative assumptions, not live grid readings, a forecast, or an electrical safety rating. Energy depends on the selected activities plus fixed background loads. Rescheduling the same activities preserves their energy; adding/removing extras changes it. Two-slot uses distribute their energy across both periods. The chart shows slot-average demand, not instantaneous peak. The same-task fixed-order online revision includes practice and revealed information and does not isolate a causal feedback effect. Physical/demonstration sessions must be interpreted according to the actual procedure used.
 
 Researcher: Adith Iyer, u7623871@anu.edu.au. COMP3900, ANU. Prepared 2026-11-02 for sessions on 2026-11-03. Final coursework submission: 2026-11-05 23:59 AEDT.
 

@@ -1,24 +1,24 @@
-import {VERSION,LANES,SLOTS,INTENSITY,SLOT_LABELS,MODEL,TASKS,BY_ID,POWER_TARGET,TOTAL_ENERGY,time,evaluate,canPlace,EXAMPLE} from './engine.mjs?v=coarse12-v1';
+import {VERSION,LANES,LANE_META,BASE_LOADS,BASE_ENERGY,SLOTS,INTENSITY,SLOT_LABELS,MODEL,TASKS,BY_ID,POWER_TARGET,TOTAL_ENERGY,time,evaluate,canPlace,EXAMPLE} from './engine.mjs?v=three-lanes-v2';
 const $=id=>document.getElementById(id);
 const EMBED_PARAMS=new URLSearchParams(location.search);
 const KEY='daylight-portal-prototype-'+(EMBED_PARAMS.get('session')||'standalone');
 const IS_TEST=EMBED_PARAMS.get('test')==='1';
 const clone=v=>JSON.parse(JSON.stringify(v));
 const fresh=(participant='TEST')=>({version:VERSION,model:clone(MODEL),participant,mode:participant==='TEST'?'feedback':'blind',phase:participant==='TEST'?'explore':'unaided',schedule:[],baseline:null,runs:[],events:[],startedAt:new Date().toISOString()});
-let state=fresh('participant'),selected=null,editing=null,dragged=null,toastTimer;
+let state=fresh('participant'),selected=null,editing=null,dragged=null,toastTimer,showExtras=false;
 try{const saved=JSON.parse(localStorage.getItem(KEY));if(saved?.version===VERSION&&Array.isArray(saved.schedule)&&Array.isArray(saved.events))state=saved;}catch{}
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch{toast('Browser storage is unavailable. Export this session before leaving.');}}
-function notifyParent(type='prototype-update'){if(window.parent!==window)window.parent.postMessage({source:'daylight-prototype',type,state:clone(state)},location.origin);}
+function notifyParent(type='prototype-update'){if(window.parent!==window)window.parent.postMessage({source:'daylight-prototype',type,state:clone(state),height:document.documentElement.scrollHeight},location.origin);}
 function record(type,detail={}){state.events.push({at:new Date().toISOString(),elapsedMs:Date.now()-new Date(state.startedAt).getTime(),phase:state.phase,mode:state.mode,type,...detail,schedule:clone(state.schedule)});persist();notifyParent();}
 function toast(message){$('toast').textContent=message;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),4200);}
 function intensityColor(value){return value<=.3?'#b7cf8d':value<=.55?'#d8d9aa':'#dba285';}
 function fmt(value,digits=2){return value.toFixed(digits);}
-function duration(t){return `${t.hours} h use`;}
+function duration(t){return t.duration===2?'2 slots · 4 hours':'1 broad slot';}
 function chosen(){return selected?BY_ID[selected]:null;}
 
 function buildGrid(){
   $('timeAxis').innerHTML='<span>LANES</span>'+Array.from({length:SLOTS},(_,s)=>`<span><strong>${SLOT_LABELS[s]}</strong><small>${time(s)}</small></span>`).join('');
-  $('gridBody').innerHTML=Array.from({length:LANES},(_,lane)=>`<div class="lane"><div class="lane-name">LANE ${lane+1}</div><div class="lane-cells" data-lane="${lane}">${Array.from({length:SLOTS},(_,slot)=>`<div class="slot ${slot>=5&&slot<=7?'daylight':slot===9||slot===10?'evening':''}" data-lane="${lane}" data-slot="${slot}" title="Lane ${lane+1}, ${time(slot)}"></div>`).join('')}</div></div>`).join('');
+  $('gridBody').innerHTML=Array.from({length:LANES},(_,lane)=>`<div class="lane" data-lane-index="${lane}"><div class="lane-name"><strong>${LANE_META[lane].name}</strong><small>${LANE_META[lane].description}</small></div><div class="lane-cells" data-lane="${lane}">${Array.from({length:SLOTS},(_,slot)=>`<div class="slot ${slot>=5&&slot<=7?'daylight':slot===9||slot===10?'evening':''}" data-lane="${lane}" data-slot="${slot}" title="${LANE_META[lane].name}, ${time(slot)}"></div>`).join('')}</div></div>`).join('');
   $('gridBody').addEventListener('click',event=>{const cell=event.target.closest('.slot');if(cell&&selected)place(selected,Number(cell.dataset.slot),Number(cell.dataset.lane));});
   $('gridBody').addEventListener('dragover',event=>{if(event.target.closest('.slot'))event.preventDefault();});
   $('gridBody').addEventListener('drop',event=>{
@@ -28,19 +28,22 @@ function buildGrid(){
   });
 }
 function place(id,start,lane){
-  if(!canPlace(state.schedule,id,start,lane)){record('placement-rejected',{id,start,lane,reason:'overlap-or-grid-boundary'});toast('That space is occupied or too close to the end of the day. Try another lane or time.');return false;}
+  if(lane===2&&BY_ID[id]&&!BY_ID[id].unattended){record('placement-rejected',{id,start,lane,reason:'requires-attention'});toast('This activity needs a person. Use Personal or Household for another person.');return false;}
+  if(!canPlace(state.schedule,id,start,lane)){record('placement-rejected',{id,start,lane,reason:'overlap-or-grid-boundary'});toast('That attention lane is busy, or the tile runs past bedtime. Try another period, Household for another person, or Background for unattended uses.');return false;}
   const before=state.schedule.find(p=>p.id===id);
   state.schedule=state.schedule.filter(p=>p.id!==id).concat({id,start,lane});
   record(before?'move':'place',{id,start,lane,previous:before?clone(before):null});selected=null;render();return true;
 }
 function renderLibrary(){
   $('taskLibrary').replaceChildren();
+  const heading=document.createElement('p');heading.className='small-note';heading.textContent='10 core activities · 8 optional extras · fridge + Wi-Fi always on';$('taskLibrary').append(heading);
   for(const task of TASKS){
+    if(!task.required&&!showExtras)continue;
     const placement=state.schedule.find(p=>p.id===task.id),button=document.createElement('button');
     button.className='task-card'+(placement?' placed':'')+(selected===task.id?' active':'');
     button.style.setProperty('--task-color',task.color);button.draggable=true;
     button.setAttribute('aria-pressed',String(selected===task.id));
-    button.innerHTML=`<div class="task-title">${task.name}<span>${placement?'✓':'+'}</span></div><div class="task-meta">One token &nbsp;·&nbsp; ${fmt(task.energy)} kWh per use</div><div class="task-rule">${task.rule}</div>`;
+    button.innerHTML=`<div class="task-title">${task.name}<span>${placement?'✓':'+'}</span></div><div class="task-meta">${duration(task)} &nbsp;·&nbsp; ${fmt(task.energy)} kWh</div><div class="task-rule">${LANE_META[task.lane].name}${task.required?'':' · optional'} · ${task.rule}</div>`;
     button.title=task.rule+'. '+task.note;
     button.addEventListener('click',()=>{selected=selected===task.id?null:task.id;renderLibrary();renderHint();});
     button.addEventListener('dblclick',()=>openEditor(task.id));
@@ -48,44 +51,47 @@ function renderLibrary(){
     button.addEventListener('dragstart',event=>{dragged=task.id;event.dataTransfer.setData('text/plain',task.id);event.dataTransfer.effectAllowed='move';selected=task.id;renderHint();});
     $('taskLibrary').append(button);
   }
+  const more=document.createElement('button');more.className='extras-button';more.textContent=showExtras?'Hide extra activities':'＋ Add more activities (8)';more.addEventListener('click',()=>{showExtras=!showExtras;renderLibrary();});$('taskLibrary').append(more);
 }
 function renderHint(){
-  const task=chosen();$('selectionHint').textContent=task?`${task.name} selected · ${task.rule}. Click a lane, or double-click its library card to use the time editor.`:'Choose any activity on the left to begin. Each column is a broad period. One token per position.';
+  const task=chosen();$('selectionHint').textContent=task?`${task.name} selected · ${task.rule}. Suggested lane: ${LANE_META[task.lane].name}. Choose the person/context, or double-click to set a time.`:'Choose any activity on the left to begin. Choose a time and attention lane. Unattended Background tiles can overlap.';
 }
 function renderEvents(result){
   document.querySelectorAll('#gridBody > .event').forEach(node=>node.remove());
-  const bad=new Set(result.issues.map(i=>i.id));
-  const grid=$('gridBody'),labelWidth=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--lane-label'))||58;
-  const available=grid.clientWidth-labelWidth;
+  const tracks=new Map(),ends=[];
+  for(const p of [...state.schedule].filter(p=>p.lane===2&&BY_ID[p.id]).sort((a,b)=>a.start-b.start||a.id.localeCompare(b.id))){let i=ends.findIndex(end=>end<=p.start);if(i<0)i=ends.length;ends[i]=p.start+BY_ID[p.id].duration;tracks.set(p.id,i);}
+  const heights=[92,92,46+Math.max(1,ends.length)*56],offsets=[0,92,184];
+  document.querySelectorAll('.lane').forEach((node,i)=>node.style.height=heights[i]+'px');
+  const grid=$('gridBody');grid.style.height=heights.reduce((a,b)=>a+b,0)+'px';
+  const labelWidth=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--lane-label'))||96,available=grid.clientWidth-labelWidth,bad=new Set(result.issues.map(i=>i.id));
+  let base=$('alwaysOn');if(!base){base=document.createElement('div');base.id='alwaysOn';base.className='always-on-band';grid.append(base);}
+  base.style.left=labelWidth+'px';base.style.top=(offsets[2]+5)+'px';base.style.width=available+'px';base.textContent='🔒 Always on: fridge + Wi-Fi · '+BASE_ENERGY.toFixed(2)+' kWh/day';
   for(const p of state.schedule){
     const task=BY_ID[p.id];if(!task)continue;
-    const event=document.createElement('button');
-    event.className='event'+(state.mode==='feedback'&&bad.has(p.id)?' invalid':'');event.style.setProperty('--event-color',task.color);
-    event.style.left=`${labelWidth+available*p.start/SLOTS+1}px`;
-    event.style.width=`${available*task.duration/SLOTS-2}px`;event.style.top=`${p.lane*64+10}px`;
-    const average=INTENSITY.slice(p.start,p.start+task.duration).reduce((a,b)=>a+b,0)/task.duration;
-    event.style.setProperty('--intensity-color',intensityColor(average));
-    event.innerHTML=`<strong>${task.short}</strong><small>${fmt(task.energy)} kWh</small>`;
-    event.title=`${task.name}, lane ${p.lane+1}, ${SLOT_LABELS[p.start]} (${time(p.start)}). Click to move this token.`;
-    event.setAttribute('aria-label',event.title);event.draggable=true;
-    event.addEventListener('click',()=>openEditor(task.id));
-    event.addEventListener('dragstart',e=>{dragged=task.id;e.dataTransfer.setData('text/plain',task.id);e.dataTransfer.effectAllowed='move';});
+    const event=document.createElement('button');event.className='event'+(state.mode==='feedback'&&bad.has(p.id)?' invalid':'');event.style.setProperty('--event-color',task.color);
+    event.style.left=(labelWidth+available*p.start/SLOTS+2)+'px';event.style.width=(available*task.duration/SLOTS-4)+'px';
+    event.style.top=(offsets[p.lane]+(p.lane===2?43+(tracks.get(p.id)||0)*56:22))+'px';
+    const average=INTENSITY.slice(p.start,p.start+task.duration).reduce((a,b)=>a+b,0)/task.duration;event.style.setProperty('--intensity-color',intensityColor(average));
+    event.innerHTML=`<strong>${task.short}${task.duration===2?' · 2 slots':''}</strong><small>${fmt(task.energy)} kWh</small>`;
+    event.title=`${task.name}, ${LANE_META[p.lane].name}, ${SLOT_LABELS[p.start]} to ${SLOT_LABELS[p.start+task.duration-1]}, ${duration(task)}. Click to move.`;event.setAttribute('aria-label',event.title);event.draggable=true;
+    event.addEventListener('click',()=>{if(selected&&selected!==task.id)place(selected,p.start,p.lane);else openEditor(task.id);});event.addEventListener('dragstart',e=>{dragged=task.id;e.dataTransfer.setData('text/plain',task.id);e.dataTransfer.effectAllowed='move';});
+    event.addEventListener('dragover',e=>{if(p.lane===2)e.preventDefault();});event.addEventListener('drop',e=>{if(p.lane!==2)return;e.preventDefault();e.stopPropagation();const id=e.dataTransfer.getData('text/plain')||dragged;if(BY_ID[id])place(id,p.start,2);dragged=null;});
     grid.append(event);
   }
 }
 function renderFeedback(result){
   const blind=state.mode==='blind';document.body.classList.toggle('unaided',blind);
-  $('needsStat').innerHTML=`${result.scheduled}<span>/ ${TASKS.length}</span>`;
-  $('needsNote').textContent=blind?'Activities placed. Outcomes are hidden until you save.':result.valid?'All ten activities meet their timing rules.':`${result.missing.length} not placed${result.issues.length?' · '+result.issues.length+' timing / layout issues':''}`;
+  $('needsStat').innerHTML=`${result.coreScheduled}<span>/ ${result.coreTotal} core${result.optionalScheduled?' + '+result.optionalScheduled+' extras':''}</span>`;
+  $('needsNote').textContent=blind?'Activities placed. Outcomes are hidden until you save.':result.valid?`${result.concurrentSlots} periods with activities running together.`:`${result.missing.length} not placed${result.issues.length?' · '+result.issues.length+' timing / layout issues':''}`;
   $('carbonStat').innerHTML=blind?'<span class="blind-value">Hidden until the end</span>':`${fmt(result.emissions)}<span>kg CO₂e</span>`;
   $('powerStat').innerHTML=blind?'<span class="blind-value">Hidden until the end</span>':`${fmt(result.peak)}<span>kW</span>`;
   $('energyStat').innerHTML=blind?'<span class="blind-value">Hidden until the end</span>':`${fmt(result.energy)}<span>kWh</span>`;
-  $('carbonNote').textContent=blind?'No live sustainability feedback in this run.':result.complete?'Example grid model, not measured household emissions.':'Scheduled activities only · complete all ten to compare.';
+  $('carbonNote').textContent=blind?'No live sustainability feedback in this run.':result.complete?'Example grid model, not measured household emissions.':'Includes fixed fridge + Wi-Fi load. Add activities to explore more.';
   $('powerNote').textContent=blind?'No live demand feedback in this run.':result.peak>POWER_TARGET?`${result.overTargetSlots} broad periods exceed the ${POWER_TARGET} kW scenario target.`:`Within the ${POWER_TARGET} kW scenario target so far.`;
   $('constraintBox').classList.toggle('bad',!blind&&result.issues.length>0);
   if(blind)$('constraintBox').innerHTML='<span class="check-symbol">○</span><div><strong>Unaided run</strong><p>Try a plan, then reveal feedback whenever you are ready.</p></div>';
   else if(result.issues.length)$('constraintBox').innerHTML=`<span class="check-symbol">!</span><div><strong>${result.issues.length} things to resolve</strong><p>${result.issues.slice(0,2).map(i=>i.message).join(' ')}</p></div>`;
-  else if(result.missing.length)$('constraintBox').innerHTML=`<span class="check-symbol">○</span><div><strong>${result.missing.length} activities still need a place</strong><p>Every activity must be included. Every token keeps the same energy wherever you place it. You can continue with an unfinished plan.</p></div>`;
+  else if(result.missing.length)$('constraintBox').innerHTML=`<span class="check-symbol">○</span><div><strong>${result.missing.length} activities still need a place</strong><p>Every activity must be included. Core uses are the starting scenario; extras are optional. Continue to feedback at any point.</p></div>`;
   else $('constraintBox').innerHTML='<span class="check-symbol">✓</span><div><strong>Every household need is met</strong><p>You can keep exploring the timing or save this version.</p></div>';
   $('finishButton').disabled=result.scheduled===0;
   $('finishButton').innerHTML=blind?'Reveal feedback <span>↗</span>':'Save this version <span>↗</span>';
@@ -95,24 +101,25 @@ function renderFeedback(result){
   $('demandChart').innerHTML=result.load.map((value,i)=>`<div class="demand-bar ${value>POWER_TARGET?'over':''}" style="--demand-height:${Math.min(100,value/scale*100)}%" title="${time(i)}: ${fmt(value)} kW"></div>`).join('');
   $('feedbackMode').classList.toggle('selected',!blind);$('blindMode').classList.toggle('selected',blind);
   $('modeNote').textContent=blind?'Feedback is held until you save this run.':'Feedback updates as you move activities.';
-  $('remainingCount').textContent=`${result.missing.length} TO PLACE`;
+  $('remainingCount').textContent=`${result.optionalScheduled} EXTRAS USED`;
   $('guidedButton').disabled=!state.baseline;
   renderComparison(result);
 }
 function renderComparison(result){
   const box=$('comparison');box.hidden=!state.baseline||state.mode==='blind';if(box.hidden)return;
   const first=evaluate(state.baseline.schedule);
-  const comparable=first.valid&&result.valid;
+  const sameUses=state.baseline.schedule.map(p=>p.id).sort().join(',')===state.schedule.map(p=>p.id).sort().join(',');
+  const comparable=first.valid&&result.valid&&sameUses;
   const change=first.emissions-result.emissions;
-  box.innerHTML=`<strong>Your first run stays saved.</strong><br>First plan: ${fmt(first.emissions)} kg CO₂e · ${fmt(first.peak)} kW highest slot average · ${first.valid?'all needs met':'incomplete or timing rules not met'}.<br>Current plan: ${fmt(result.emissions)} kg CO₂e · ${fmt(result.peak)} kW highest slot average.<br>${comparable?`${change>=0?'Lower':'Higher'} modelled emissions by ${fmt(Math.abs(change))} kg CO₂e (${fmt(Math.abs(change)/first.emissions*100,1)}%). Both complete schedules use ${fmt(TOTAL_ENERGY,3)} kWh.`:'Complete a valid schedule before interpreting the difference. If the first plan broke requirements, compare feasibility as well as emissions.'}<br><span class="small-note">This is a before-and-after revision. Practice and the revealed information can both contribute.</span>`;
+  box.innerHTML=`<strong>Your first run stays saved.</strong><br>First plan: ${fmt(first.emissions)} kg CO₂e · ${fmt(first.peak)} kW highest slot average · ${first.valid?'all needs met':'incomplete or timing rules not met'}.<br>Current plan: ${fmt(result.emissions)} kg CO₂e · ${fmt(result.peak)} kW highest slot average.<br>${comparable?`${change>=0?'Lower':'Higher'} modelled emissions by ${fmt(Math.abs(change))} kg CO₂e (${fmt(Math.abs(change)/first.emissions*100,1)}%). Both complete schedules use ${fmt(result.energy,3)} kWh including fixed background loads.`:'Use the same activities when comparing timing. Added or removed extras also change total energy. Unfinished plans remain recorded.'}<br><span class="small-note">This is a before-and-after revision. Practice and the revealed information can both contribute.</span>`;
 }
-function render(){const result=evaluate(state.schedule);renderLibrary();renderHint();renderEvents(result);renderFeedback(result);$('participant').value=state.participant;}
+function render(){const result=evaluate(state.schedule);renderLibrary();renderHint();renderEvents(result);renderFeedback(result);$('participant').value=state.participant;requestAnimationFrame(()=>notifyParent());}
 function openEditor(id){
   editing=id;const task=BY_ID[id],placement=state.schedule.find(p=>p.id===id);
   $('editorTitle').textContent=task.name;$('editorRule').textContent=task.rule+'. '+task.note;
   $('startSelect').innerHTML=Array.from({length:SLOTS-task.duration+1},(_,s)=>`<option value="${s}">${SLOT_LABELS[s]} · ${time(s)}</option>`).join('');
-  $('laneSelect').innerHTML=Array.from({length:LANES},(_,i)=>`<option value="${i}">Lane ${i+1}</option>`).join('');
-  $('startSelect').value=placement?.start??task.fixed??task.windows[0][0];$('laneSelect').value=placement?.lane??0;
+  $('laneSelect').innerHTML=Array.from({length:LANES},(_,i)=>`<option value="${i}" ${i===2&&!task.unattended?'disabled':''}>${LANE_META[i].name}</option>`).join('');
+  $('startSelect').value=placement?.start??task.fixed??task.windows[0][0];$('laneSelect').value=placement?.lane??task.lane;
   $('removeTask').disabled=!placement;$('editDialog').showModal();
 }
 function captureBaseline(){
