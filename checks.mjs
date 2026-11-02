@@ -1,5 +1,5 @@
-import assert from 'node:assert/strict';
-import {TASKS,TOTAL_ENERGY,EXAMPLE,evaluate,canPlace,INTENSITY,time} from './dist/engine.mjs';
+﻿import assert from 'node:assert/strict';
+import {TASKS,TOTAL_ENERGY,EXAMPLE,evaluate,canPlace,INTENSITY,time} from './prototype/engine.mjs';
 const first=evaluate(EXAMPLE);
 assert(first.valid,JSON.stringify(first.issues));
 assert(Math.abs(first.energy-10.298)<1e-9);
@@ -27,3 +27,4 @@ for(const task of TASKS){
   assert(Math.abs(single.energy-task.kw*task.duration/2)<1e-9);
 }
 console.log(JSON.stringify({passed:true,tasks:TASKS.length,totalKWh:TOTAL_ENERGY,first:{kgCO2e:first.emissions,peakKW:first.peak},revision:{kgCO2e:improved.emissions,peakKW:improved.peak},checks:'energy invariant; complete/partial/duplicate; windows; fixed time; precedence; collision; boundaries; emissions sum'},null,2));
+
