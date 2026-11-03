@@ -1,4 +1,4 @@
-import {API_URL,VERSION} from './config.mjs';
+import {API_URL,VERSION,INFO_VERSION} from './config.mjs?v=learning-v4';
 const $=id=>document.getElementById(id);
 const TEST=new URLSearchParams(location.search).get('test')==='1';
 const TEST_RUN=TEST?new URLSearchParams(location.search).get('run'):null;
@@ -41,10 +41,10 @@ function buildForms(content){
  content.susItems.forEach((item,i)=>{const row=document.createElement('div');row.className='sus-row';const field=document.createElement('fieldset'),legend=document.createElement('legend');legend.textContent=(i+1)+'. '+item;field.append(legend);const scale=document.createElement('div');scale.className='scale';for(let n=1;n<=5;n++){const label=document.createElement('label'),input=document.createElement('input');input.type='radio';input.name='sus'+i;input.value=n;input.setAttribute('aria-label',`${n}${n===1?' Strongly disagree':n===5?' Strongly agree':''}`);label.append(input,document.createTextNode(n));scale.append(label);}const skip=document.createElement('label');skip.className='skip-answer';const input=document.createElement('input');input.type='radio';input.name='sus'+i;input.value='';skip.append(input,document.createTextNode('Skip'));scale.append(skip);field.append(scale);const anchors=document.createElement('div');anchors.className='scale-anchors';anchors.innerHTML='<span>1 · Strongly disagree</span><span>5 · Strongly agree</span>';field.append(anchors);row.append(field);$('susFields').append(row);});
 }
 function loadPlanner(){
- const src='prototype/?board=three-lanes-v2&session='+encodeURIComponent(state.id)+(TEST||state.serverTest?'&test=1':'');
+ const src='prototype/?board=learning-v4&session='+encodeURIComponent(state.id)+(TEST||state.serverTest?'&test=1':'');
  if(!$('planner').getAttribute('src'))$('planner').src=src;
  if(state.prototype&&state.prototype.version!=='daylight-three-lanes-2026-11-02-v2'){state.previousPrototypeVersions??=[];state.previousPrototypeVersions.push(state.prototype);state.prototype=null;event('prototype-model-changed',{to:'daylight-three-lanes-2026-11-02-v2'});}
- if(state.prototype?.runs?.length){$('toFeedback').disabled=false;$('taskHeading').textContent='Your plan is saved.';}
+ $('toFeedback').disabled=false;
 }
 const routeNames={digital:'Online prototype',physical:'Physical prototype with researcher',demonstration:'Researcher-led demonstration',none:'No prototype experience'};
 function setupSurvey(){
@@ -70,21 +70,23 @@ $('decline').addEventListener('click',()=>{$('consentForm').reset();show('declin
 $('restartDecline').addEventListener('click',()=>show('welcome',{save:false}));
 $('consentForm').addEventListener('submit',async e=>{
  e.preventDefault();if(submitting)return;submitting=true;$('consentSubmit').disabled=true;$('consentError').textContent='Saving your consent privately…';
- const f=new FormData(e.currentTarget),consent={name:String(f.get('name')).trim(),uid:String(f.get('uid')).trim().toLowerCase(),eligible:f.get('eligible')==='on',agreed:f.get('agreed')==='on',media:Array.from({length:5},(_,i)=>f.get('media'+i)==='yes'),restrictions:String(f.get('restrictions')||''),test:TEST,infoVersion:VERSION,at:new Date().toISOString()};
+ const f=new FormData(e.currentTarget),consent={name:String(f.get('name')).trim(),uid:String(f.get('uid')).trim().toLowerCase(),eligible:f.get('eligible')==='on',agreed:f.get('agreed')==='on',media:Array.from({length:5},(_,i)=>f.get('media'+i)==='yes'),restrictions:String(f.get('restrictions')||''),test:TEST,infoVersion:INFO_VERSION,at:new Date().toISOString()};
  state.pendingCreate??={requestId:crypto.randomUUID(),requestToken:crypto.randomUUID()+crypto.randomUUID()};persist();
- try{const r=await api({action:'create',consent,...state.pendingCreate});state={...empty(),id:r.id,token:r.token,code:r.code,media:consent.media,savedAt:r.savedAt,serverTest:r.test};event('consent-saved',{infoVersion:VERSION});e.target.reset();$('consentError').textContent='';show('instructions');}catch(error){$('consentError').textContent=error.message;}finally{submitting=false;$('consentSubmit').disabled=false;}
+ try{const r=await api({action:'create',consent,...state.pendingCreate});state={...empty(),id:r.id,token:r.token,code:r.code,media:consent.media,savedAt:r.savedAt,serverTest:r.test};event('consent-saved',{infoVersion:INFO_VERSION});e.target.reset();$('consentError').textContent='';show('instructions');}catch(error){$('consentError').textContent=error.message;}finally{submitting=false;$('consentSubmit').disabled=false;}
 });
 $('startOnline').addEventListener('click',()=>{state.experience='digital';event('route-chosen',{experience:'digital'});show('prototype');});
 $('skipOnline').addEventListener('click',()=>{if(!$('experienceConfirmed').checked){$('routeError').textContent='Confirm that the activity is finished, or that you have agreed with Adith to continue.';return;}state.experience=$('experienceRoute').value;event('route-chosen',{experience:state.experience});show('questionnaire');});
-function goToFeedback(){state.prototypeStopped=!state.prototype?.runs?.length;event('prototype-to-questionnaire',{unfinished:state.prototypeStopped,baselineSaved:!!state.prototype?.baseline,activityCount:state.prototype?.schedule?.length||0});show('questionnaire');}
+function goToFeedback(){state.prototypeStopped=state.prototype?.demoVersion?state.prototype.phase!=='complete':!state.prototype?.runs?.length;event('prototype-to-questionnaire',{unfinished:state.prototypeStopped,baselineSaved:!!state.prototype?.baseline,activityCount:state.prototype?.schedule?.length||0});show('questionnaire');}
 $('toFeedback').addEventListener('click',goToFeedback);
 $('leaveTask').addEventListener('click',goToFeedback);
 window.addEventListener('message',e=>{
  if(e.origin!==location.origin||e.source!==$('planner').contentWindow||e.data?.source!=='daylight-prototype'||!state.id||state.experience!=='digital'||state.stage!=='prototype')return;
  const p=e.data.state;if(!Array.isArray(p?.schedule)||!Array.isArray(p?.events))return;
  state.prototype=p;if(Number.isFinite(e.data.height))$('planner').style.height=Math.min(2600,Math.max(900,e.data.height+20))+'px';persist();scheduleSave();
- if(p.baseline){$('taskHeading').textContent='Now explore a better time.';$('taskNote').textContent='Your first plan is saved. Explore a few changes with live feedback, or continue whenever you are ready.';}
- if(e.data.type==='prototype-complete'||p.runs?.length){$('toFeedback').disabled=false;$('taskHeading').textContent='Your plan is saved.';$('taskNote').textContent='Continue to the questionnaire when you are ready.';}
+ const labels={initial:['1 / 3 · First unaided plan','Energy cues and coaching are off. Save this step to begin guided practice.'],guided:['2 / 3 · Guided practice','Learn with the visible cues, then advance to a fresh unaided plan.'],final:['3 / 3 · Final unaided try','Use what you learned. The cues are hidden until this step is saved.'],complete:['Three steps saved','Review your results, then continue to the questionnaire.']};
+ const label=labels[p.phase]||['Explore the prototype','Continue whenever you are ready.'];$('taskHeading').textContent=label[0];$('taskNote').textContent=label[1];
+ if(e.data.type==='request-questionnaire')goToFeedback();
+
 });
 $('surveyForm').addEventListener('input',()=>updateSurveyDraft());
 $('surveyForm').addEventListener('submit',async e=>{e.preventDefault();if(submitting)return;submitting=true;$('surveySubmit').disabled=true;$('surveyError').textContent='Submitting your responses…';updateSurveyDraft(false);event('questionnaire-submitted');const previous=state.stage;state.stage='complete';try{const r=await saveNow('finish');if(!r.finished)throw Error('Submission was not confirmed. Please retry.');state.savedAt=r.savedAt;show('complete',{save:false});}catch(error){state.stage=previous;persist();$('surveyError').textContent=error.message;}finally{submitting=false;$('surveySubmit').disabled=false;}});

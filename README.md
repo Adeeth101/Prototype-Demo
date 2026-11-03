@@ -40,3 +40,11 @@ Researcher: Adith Iyer, u7623871@anu.edu.au. COMP3900, ANU. Prepared 2026-11-02 
 ## AI assistance
 
 Adith selected the concept and proposed the time-axis/five-lane optimisation task. Codex assisted with implementation, study-flow wording, matching the original SUS instrument, consent/data-handling design, automated checks and deployment. Values are illustrative pending verification. No participant evidence or findings were generated. The coursework AI-use log and acknowledgement are maintained separately in the HCI project.
+
+## Learning demonstration update - 2026-11-03
+
+The explicit sequence is **initial unaided -> guided practice -> final unaided -> saved results**. Colour/energy/demand coaching is shown during guided practice; both unaided stages hide it. The final stage starts with an empty board and the same core/chosen-extra activity pool. Each immutable snapshot records phase, help availability, start/end time, original schedule and metrics. A comparison requires valid plans with the same selected uses. This immediate practice check does not demonstrate lasting learning or causal effects; order and practice remain confounded. Incomplete stages remain usable evidence and do not block the questionnaire.
+
+The visual prototype uses a recessed board, an activity tray and rounded raised tiles. Drag left into the tray to remove, with Undo; hover/drag previews show the entire one/two-slot footprint, the active period and attention lane. Green outline means placement fits, not optimal energy use. Red means an invalid fit; guided amber means a timing rule to revisit. Dragging outside/cancelling leaves the original tile in place. The original chosen grip position is kept for long tiles. Delete removes a focused tile; the editor/select-and-click alternatives remain.
+
+Fresh rehearsal: `?test=1&run=learning-v4`. Existing consent/session data remains; previous demonstration snapshots are retained rather than reinterpreted. Participant information version is updated for the three-step activity. No actual participant evidence was generated during development.

@@ -1,60 +1,54 @@
-import {VERSION,LANES,LANE_META,BASE_LOADS,BASE_ENERGY,SLOTS,INTENSITY,SLOT_LABELS,MODEL,TASKS,BY_ID,POWER_TARGET,TOTAL_ENERGY,time,evaluate,canPlace,EXAMPLE} from './engine.mjs?v=three-lanes-v2';
-const $=id=>document.getElementById(id);
-const EMBED_PARAMS=new URLSearchParams(location.search);
-const KEY='daylight-portal-prototype-'+(EMBED_PARAMS.get('session')||'standalone');
-const IS_TEST=EMBED_PARAMS.get('test')==='1';
-const clone=v=>JSON.parse(JSON.stringify(v));
-const fresh=(participant='TEST')=>({version:VERSION,model:clone(MODEL),participant,mode:participant==='TEST'?'feedback':'blind',phase:participant==='TEST'?'explore':'unaided',schedule:[],baseline:null,runs:[],events:[],startedAt:new Date().toISOString()});
-let state=fresh('participant'),selected=null,editing=null,dragged=null,toastTimer,showExtras=false;
-try{const saved=JSON.parse(localStorage.getItem(KEY));if(saved?.version===VERSION&&Array.isArray(saved.schedule)&&Array.isArray(saved.events))state=saved;}catch{}
-function persist(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch{toast('Browser storage is unavailable. Export this session before leaving.');}}
+import {VERSION,LANES,LANE_META,BASE_ENERGY,SLOTS,INTENSITY,SLOT_LABELS,TASKS,BY_ID,POWER_TARGET,time,evaluate,canPlace,EXAMPLE} from './engine.mjs?v=learning-v4';
+import {DEMO_VERSION,newSession,advanceSession,comparison,clone} from './learning.mjs?v=learning-v4';
+import {createInteractions} from './interactions.mjs?v=learning-v4';
+const $=id=>document.getElementById(id),params=new URLSearchParams(location.search);
+const KEY='daylight-portal-prototype-'+(params.get('session')||'standalone'),IS_TEST=params.get('test')==='1';
+let state=newSession(),selected=null,editing=null,showExtras=false,toastTimer,lastReason='';
+try{const saved=JSON.parse(localStorage.getItem(KEY));if(saved?.version===VERSION&&saved.demoVersion===DEMO_VERSION)state=saved;else if(saved)state.earlierDemonstrations=[saved];}catch{}
+const fmt=(n,d=2)=>n.toFixed(d),isEditing=()=>state.phase!=='complete';
+const duration=t=>t.duration===2?'2 slots · 4h':'1 slot';
+function persist(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch{toast('Keep this page open until your responses are submitted. Browser storage is unavailable.');}}
 function notifyParent(type='prototype-update'){if(window.parent!==window)window.parent.postMessage({source:'daylight-prototype',type,state:clone(state),height:document.documentElement.scrollHeight},location.origin);}
-function record(type,detail={}){state.events.push({at:new Date().toISOString(),elapsedMs:Date.now()-new Date(state.startedAt).getTime(),phase:state.phase,mode:state.mode,type,...detail,schedule:clone(state.schedule)});persist();notifyParent();}
-function toast(message){$('toast').textContent=message;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),4200);}
-function intensityColor(value){return value<=.3?'#b7cf8d':value<=.55?'#d8d9aa':'#dba285';}
-function fmt(value,digits=2){return value.toFixed(digits);}
-function duration(t){return t.duration===2?'2 slots · 4 hours':'1 broad slot';}
-function chosen(){return selected?BY_ID[selected]:null;}
-
+function record(type,detail={}){state.events.push({at:new Date().toISOString(),elapsedMs:Date.now()-new Date(state.startedAt).getTime(),phase:state.phase,mode:state.mode,helpShown:state.phase==='guided',type,...detail,schedule:clone(state.schedule)});persist();notifyParent();}
+function toast(message,action){const box=$('toast');box.replaceChildren(document.createTextNode(message));if(action){const button=document.createElement('button');button.textContent='Undo';button.onclick=action;box.append(button);}box.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>box.classList.remove('show'),action?7500:4500);}
+function hint(message){$('selectionHint').textContent=message|| (selected?`${BY_ID[selected].name} selected · drag or click a recessed slot. Drag a placed tile left to return it to the tray.`:'Drag a tile into a recessed slot. Drag it left into the tray to remove it. Click a tile to edit.');}
+const dragUI=createInteractions({getState:()=>state,getSelected:()=>selected,setSelected:id=>selected=id,place,remove:removeTile,record,hint});
 function buildGrid(){
-  $('timeAxis').innerHTML='<span>LANES</span>'+Array.from({length:SLOTS},(_,s)=>`<span><strong>${SLOT_LABELS[s]}</strong><small>${time(s)}</small></span>`).join('');
-  $('gridBody').innerHTML=Array.from({length:LANES},(_,lane)=>`<div class="lane" data-lane-index="${lane}"><div class="lane-name"><strong>${LANE_META[lane].name}</strong><small>${LANE_META[lane].description}</small></div><div class="lane-cells" data-lane="${lane}">${Array.from({length:SLOTS},(_,slot)=>`<div class="slot ${slot>=5&&slot<=7?'daylight':slot===9||slot===10?'evening':''}" data-lane="${lane}" data-slot="${slot}" title="${LANE_META[lane].name}, ${time(slot)}"></div>`).join('')}</div></div>`).join('');
-  $('gridBody').addEventListener('click',event=>{const cell=event.target.closest('.slot');if(cell&&selected)place(selected,Number(cell.dataset.slot),Number(cell.dataset.lane));});
-  $('gridBody').addEventListener('dragover',event=>{if(event.target.closest('.slot'))event.preventDefault();});
-  $('gridBody').addEventListener('drop',event=>{
-    const cell=event.target.closest('.slot');if(!cell)return;event.preventDefault();
-    const id=event.dataTransfer.getData('text/plain')||dragged;
-    if(BY_ID[id])place(id,Number(cell.dataset.slot),Number(cell.dataset.lane));dragged=null;
-  });
+ $('timeAxis').innerHTML='<span>ATTENTION</span>'+SLOT_LABELS.map((label,s)=>`<span><strong>${label}</strong><small>${time(s)}</small></span>`).join('');
+ $('gridBody').innerHTML=Array.from({length:LANES},(_,lane)=>`<div class="lane"><div class="lane-name"><strong>${LANE_META[lane].name}</strong><small>${LANE_META[lane].description}</small></div><div class="lane-cells">${Array.from({length:SLOTS},(_,s)=>`<div class="slot ${INTENSITY[s]<=.3?'daylight':INTENSITY[s]>=.625?'evening':''}" data-lane="${lane}" data-slot="${s}" title="${LANE_META[lane].name} · ${SLOT_LABELS[s]}"></div>`).join('')}</div></div>`).join('');
+ // The preview is transient; replacing grid children must not detach its node.
+ gridPreviewReattach();
 }
-function place(id,start,lane){
-  if(lane===2&&BY_ID[id]&&!BY_ID[id].unattended){record('placement-rejected',{id,start,lane,reason:'requires-attention'});toast('This activity needs a person. Use Personal or Household for another person.');return false;}
-  if(!canPlace(state.schedule,id,start,lane)){record('placement-rejected',{id,start,lane,reason:'overlap-or-grid-boundary'});toast('That attention lane is busy, or the tile runs past bedtime. Try another period, Household for another person, or Background for unattended uses.');return false;}
-  const before=state.schedule.find(p=>p.id===id);
-  state.schedule=state.schedule.filter(p=>p.id!==id).concat({id,start,lane});
-  record(before?'move':'place',{id,start,lane,previous:before?clone(before):null});selected=null;render();return true;
+function gridPreviewReattach(){dragUI.reattach();}
+function place(id,start,lane,via='editor'){
+ if(!isEditing())return false;
+ if(state.phase==='final'&&!state.finalPool.includes(id)){toast('Use the same activity set for this unaided try.');return false;}
+ if(!canPlace(state.schedule,id,start,lane)){record('placement-rejected',{id,start,lane,via});toast(lane===2&&!BY_ID[id]?.unattended?'This needs a person. Use Personal or Household.':'The lane is occupied or the whole tile does not fit. Try another slot.');return false;}
+ const before=state.schedule.find(p=>p.id===id),metrics=evaluate(state.schedule);
+ state.schedule=state.schedule.filter(p=>p.id!==id).concat({id,start,lane});
+ record(before?'move':'place',{id,start,lane,via,previous:before?clone(before):null});selected=null;
+ if(state.phase==='guided'){const after=evaluate(state.schedule);lastReason=before?`${BY_ID[id].name}: moving the same use ${after.emissions<metrics.emissions?'lowered':after.emissions>metrics.emissions?'raised':'kept'} modelled emissions${after.emissions!==metrics.emissions?' by '+fmt(Math.abs(after.emissions-metrics.emissions))+' kg CO₂e':''}. Its energy stays the same.`:'A use was added. Total energy can rise; compare timing using the same activities.';}
+ render();return true;
+}
+function removeTile(id,via='editor'){
+ if(!isEditing())return;const previous=state.schedule.find(p=>p.id===id);if(!previous)return;
+ const phase=state.phase;state.schedule=state.schedule.filter(p=>p.id!==id);selected=null;record('remove',{id,via,previous:clone(previous)});
+ lastReason='Returning a use to the tray removes its energy. To learn about timing, compare plans with the same uses.';render();
+ toast(BY_ID[id].name+' returned to the tray.',()=>{if(state.phase!==phase){toast('A new step has started. The original removal remains recorded.');return;}if(canPlace(state.schedule,id,previous.start,previous.lane)){state.schedule.push(previous);record('undo-remove',{id,previous});render();toast('Tile restored.');}else toast('That position is occupied now. Place the tile from the tray.');});
 }
 function renderLibrary(){
-  $('taskLibrary').replaceChildren();
-  const heading=document.createElement('p');heading.className='small-note';heading.textContent='10 core activities · 8 optional extras · fridge + Wi-Fi always on';$('taskLibrary').append(heading);
-  for(const task of TASKS){
-    if(!task.required&&!showExtras)continue;
-    const placement=state.schedule.find(p=>p.id===task.id),button=document.createElement('button');
-    button.className='task-card'+(placement?' placed':'')+(selected===task.id?' active':'');
-    button.style.setProperty('--task-color',task.color);button.draggable=true;
-    button.setAttribute('aria-pressed',String(selected===task.id));
-    button.innerHTML=`<div class="task-title">${task.name}<span>${placement?'✓':'+'}</span></div><div class="task-meta">${duration(task)} &nbsp;·&nbsp; ${fmt(task.energy)} kWh</div><div class="task-rule">${LANE_META[task.lane].name}${task.required?'':' · optional'} · ${task.rule}</div>`;
-    button.title=task.rule+'. '+task.note;
-    button.addEventListener('click',()=>{selected=selected===task.id?null:task.id;renderLibrary();renderHint();});
-    button.addEventListener('dblclick',()=>openEditor(task.id));
-    button.addEventListener('keydown',event=>{if(event.key==='Enter'&&event.shiftKey){event.preventDefault();openEditor(task.id);}});
-    button.addEventListener('dragstart',event=>{dragged=task.id;event.dataTransfer.setData('text/plain',task.id);event.dataTransfer.effectAllowed='move';selected=task.id;renderHint();});
-    $('taskLibrary').append(button);
-  }
-  const more=document.createElement('button');more.className='extras-button';more.textContent=showExtras?'Hide extra activities':'＋ Add more activities (8)';more.addEventListener('click',()=>{showExtras=!showExtras;renderLibrary();});$('taskLibrary').append(more);
-}
-function renderHint(){
-  const task=chosen();$('selectionHint').textContent=task?`${task.name} selected · ${task.rule}. Suggested lane: ${LANE_META[task.lane].name}. Choose the person/context, or double-click to set a time.`:'Choose any activity on the left to begin. Choose a time and attention lane. Unattended Background tiles can overlap.';
+ $('taskLibrary').replaceChildren();
+ const available=state.phase==='final'?TASKS.filter(t=>state.finalPool.includes(t.id)):TASKS;
+ for(const task of available){
+  if(!task.required&&!showExtras&&state.phase!=='final')continue;
+  const placed=state.schedule.some(p=>p.id===task.id),button=document.createElement('button');
+  button.className='task-card'+(placed?' placed':'')+(selected===task.id?' active':'');button.style.setProperty('--task-color',task.color);button.draggable=isEditing();button.disabled=!isEditing();
+  button.setAttribute('aria-pressed',String(selected===task.id));
+  button.innerHTML=`<span class="tile-grip" aria-hidden="true">⠿</span><span class="task-title">${task.name}<b>${placed?'✓':'+'}</b></span><span class="task-meta">${duration(task)}${state.mode==='feedback'?' · '+fmt(task.energy)+' kWh':''}</span><span class="task-rule">${LANE_META[task.lane].name}${task.required?'':' · optional'} · ${task.rule}</span>`;
+  button.title='Drag to the board. '+task.rule;button.addEventListener('click',()=>{if(dragUI.ignoreClick())return;dragUI.beforeRender();selected=selected===task.id?null:task.id;renderLibrary();hint();});
+  button.addEventListener('dblclick',()=>openEditor(task.id));button.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.shiftKey){e.preventDefault();openEditor(task.id);}});dragUI.wireTile(button,task.id,false);$('taskLibrary').append(button);
+ }
+ if(state.phase!=='final'){const more=document.createElement('button');more.className='extras-button';more.textContent=showExtras?'Hide optional extras':'＋ Optional extra activities (8)';more.onclick=()=>{showExtras=!showExtras;renderLibrary();};$('taskLibrary').append(more);}
 }
 function renderEvents(result){
   document.querySelectorAll('#gridBody > .event').forEach(node=>node.remove());
@@ -65,96 +59,67 @@ function renderEvents(result){
   const grid=$('gridBody');grid.style.height=heights.reduce((a,b)=>a+b,0)+'px';
   const labelWidth=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--lane-label'))||96,available=grid.clientWidth-labelWidth,bad=new Set(result.issues.map(i=>i.id));
   let base=$('alwaysOn');if(!base){base=document.createElement('div');base.id='alwaysOn';base.className='always-on-band';grid.append(base);}
-  base.style.left=labelWidth+'px';base.style.top=(offsets[2]+5)+'px';base.style.width=available+'px';base.textContent='🔒 Always on: fridge + Wi-Fi · '+BASE_ENERGY.toFixed(2)+' kWh/day';
+  base.style.left=labelWidth+'px';base.style.top=(offsets[2]+5)+'px';base.style.width=available+'px';base.textContent='Always on · fridge + Wi-Fi'+(state.mode==='feedback'?' · '+BASE_ENERGY.toFixed(2)+' kWh/day':'');
   for(const p of state.schedule){
     const task=BY_ID[p.id];if(!task)continue;
     const event=document.createElement('button');event.className='event'+(state.mode==='feedback'&&bad.has(p.id)?' invalid':'');event.style.setProperty('--event-color',task.color);
     event.style.left=(labelWidth+available*p.start/SLOTS+2)+'px';event.style.width=(available*task.duration/SLOTS-4)+'px';
     event.style.top=(offsets[p.lane]+(p.lane===2?43+(tracks.get(p.id)||0)*56:22))+'px';
     const average=INTENSITY.slice(p.start,p.start+task.duration).reduce((a,b)=>a+b,0)/task.duration;event.style.setProperty('--intensity-color',intensityColor(average));
-    event.innerHTML=`<strong>${task.short}${task.duration===2?' · 2 slots':''}</strong><small>${fmt(task.energy)} kWh</small>`;
-    event.title=`${task.name}, ${LANE_META[p.lane].name}, ${SLOT_LABELS[p.start]} to ${SLOT_LABELS[p.start+task.duration-1]}, ${duration(task)}. Click to move.`;event.setAttribute('aria-label',event.title);event.draggable=true;
-    event.addEventListener('click',()=>{if(selected&&selected!==task.id)place(selected,p.start,p.lane);else openEditor(task.id);});event.addEventListener('dragstart',e=>{dragged=task.id;e.dataTransfer.setData('text/plain',task.id);e.dataTransfer.effectAllowed='move';});
-    event.addEventListener('dragover',e=>{if(p.lane===2)e.preventDefault();});event.addEventListener('drop',e=>{if(p.lane!==2)return;e.preventDefault();e.stopPropagation();const id=e.dataTransfer.getData('text/plain')||dragged;if(BY_ID[id])place(id,p.start,2);dragged=null;});
+    event.innerHTML=`<strong>${task.short}${task.duration===2?' · 2 slots':''}</strong><small>${state.mode==='feedback'?fmt(task.energy)+' kWh':duration(task)}</small>`;
+    event.title=`${task.name}, ${LANE_META[p.lane].name}, ${SLOT_LABELS[p.start]} to ${SLOT_LABELS[p.start+task.duration-1]}, ${duration(task)}. Click to move.`;event.setAttribute('aria-label',event.title);event.draggable=isEditing();
+    event.addEventListener('click',e=>{if(dragUI.ignoreClick()||!isEditing())return;if(selected&&e.detail!==0)return;e.stopPropagation();openEditor(task.id);});
+    dragUI.wireTile(event,task.id,true);
     grid.append(event);
   }
 }
+
+function renderPhase(){
+ const phase=state.phase,step=phase==='initial'?0:phase==='guided'?1:2;
+ document.body.className='prototype '+(state.mode==='blind'?'unaided ':'aided ')+(phase==='complete'?'finished':'');
+ document.querySelectorAll('#learningSteps li').forEach((node,i)=>{node.classList.toggle('active',phase!=='complete'&&i===step);node.classList.toggle('done',i<step||phase==='complete');if(phase!=='complete'&&i===step)node.setAttribute('aria-current','step');else node.removeAttribute('aria-current');});
+ const content={initial:['STEP 1 OF 3 · UNAIDED','Try your own plan first.','Meet the household needs and choose times you think work well. Energy colours, scores and hints are hidden. Save this plan when you are ready.','Save unaided plan → Guided practice'],guided:['STEP 2 OF 3 · AIDED','Learn the pattern. Then improve your plan.','Use the colours and live feedback to explore the trade-offs. Keep needs and activities comparable. When ready, try again without these hints.','Save practice → Try unaided again'],final:['STEP 3 OF 3 · UNAIDED','Apply what you learned, without the cues.','This is a fresh board with the same core activities and chosen extras. Rebuild a sensible day from memory. Colours, live scores and coaching are hidden until you finish.','Save final unaided plan → See results'],complete:['THREE STEPS SAVED','Your practice is complete.','All three plans are preserved, including any unfinished work. Review what changed, then continue to the questionnaire.','Continue to questionnaire →']}[phase];
+ $('phaseTag').textContent=content[0];$('phaseTitle').textContent=content[1];$('phaseDescription').textContent=content[2];$('helpBadge').textContent=state.mode==='blind'?'HELP OFF · UNAIDED':phase==='guided'?'HELP ON · GUIDED PRACTICE':'RESULTS';
+ for(const id of ['stageNext','finishButton']){$(id).textContent=content[3];$(id).disabled=false;}
+ $('coach').hidden=phase!=='guided';$('coachReason').textContent=lastReason||'In this example, the late-morning, midday and afternoon periods have lower grid intensity. Move a flexible use there, then check both emissions and demand.';
+ $('trayNote').textContent=phase==='final'?'Use this same activity set again. Longer tiles span two slots.':'10 core uses · optional extras · fixed fridge + Wi-Fi';
+ $('testExample').hidden=!IS_TEST||phase==='complete';
+}
 function renderFeedback(result){
-  const blind=state.mode==='blind';document.body.classList.toggle('unaided',blind);
-  $('needsStat').innerHTML=`${result.coreScheduled}<span>/ ${result.coreTotal} core${result.optionalScheduled?' + '+result.optionalScheduled+' extras':''}</span>`;
-  $('needsNote').textContent=blind?'Activities placed. Outcomes are hidden until you save.':result.valid?`${result.concurrentSlots} periods with activities running together.`:`${result.missing.length} not placed${result.issues.length?' · '+result.issues.length+' timing / layout issues':''}`;
-  $('carbonStat').innerHTML=blind?'<span class="blind-value">Hidden until the end</span>':`${fmt(result.emissions)}<span>kg CO₂e</span>`;
-  $('powerStat').innerHTML=blind?'<span class="blind-value">Hidden until the end</span>':`${fmt(result.peak)}<span>kW</span>`;
-  $('energyStat').innerHTML=blind?'<span class="blind-value">Hidden until the end</span>':`${fmt(result.energy)}<span>kWh</span>`;
-  $('carbonNote').textContent=blind?'No live sustainability feedback in this run.':result.complete?'Example grid model, not measured household emissions.':'Includes fixed fridge + Wi-Fi load. Add activities to explore more.';
-  $('powerNote').textContent=blind?'No live demand feedback in this run.':result.peak>POWER_TARGET?`${result.overTargetSlots} broad periods exceed the ${POWER_TARGET} kW scenario target.`:`Within the ${POWER_TARGET} kW scenario target so far.`;
-  $('constraintBox').classList.toggle('bad',!blind&&result.issues.length>0);
-  if(blind)$('constraintBox').innerHTML='<span class="check-symbol">○</span><div><strong>Unaided run</strong><p>Try a plan, then reveal feedback whenever you are ready.</p></div>';
-  else if(result.issues.length)$('constraintBox').innerHTML=`<span class="check-symbol">!</span><div><strong>${result.issues.length} things to resolve</strong><p>${result.issues.slice(0,2).map(i=>i.message).join(' ')}</p></div>`;
-  else if(result.missing.length)$('constraintBox').innerHTML=`<span class="check-symbol">○</span><div><strong>${result.missing.length} activities still need a place</strong><p>Every activity must be included. Core uses are the starting scenario; extras are optional. Continue to feedback at any point.</p></div>`;
-  else $('constraintBox').innerHTML='<span class="check-symbol">✓</span><div><strong>Every household need is met</strong><p>You can keep exploring the timing or save this version.</p></div>';
-  $('finishButton').disabled=result.scheduled===0;
-  $('finishButton').innerHTML=blind?'Reveal feedback <span>↗</span>':'Save this version <span>↗</span>';
-  $('profileChart').innerHTML=INTENSITY.map((value,i)=>`<div class="profile-bar" style="--profile-color:${intensityColor(value)};--intensity-height:${value/.8*100}%" title="${time(i)}: ${value.toFixed(2)} kg CO₂e/kWh, illustrative"></div>`).join('');
-  const scale=Math.max(7,result.peak);
-  $('demandChart').style.setProperty('--target-position',`${POWER_TARGET/scale*100}%`);
-  $('demandChart').innerHTML=result.load.map((value,i)=>`<div class="demand-bar ${value>POWER_TARGET?'over':''}" style="--demand-height:${Math.min(100,value/scale*100)}%" title="${time(i)}: ${fmt(value)} kW"></div>`).join('');
-  $('feedbackMode').classList.toggle('selected',!blind);$('blindMode').classList.toggle('selected',blind);
-  $('modeNote').textContent=blind?'Feedback is held until you save this run.':'Feedback updates as you move activities.';
-  $('remainingCount').textContent=`${result.optionalScheduled} EXTRAS USED`;
-  $('guidedButton').disabled=!state.baseline;
-  renderComparison(result);
+ const blind=state.mode==='blind';
+ $('needsStat').innerHTML=`${result.coreScheduled}<span>/ 10 core${result.optionalScheduled?' + '+result.optionalScheduled+' extras':''}</span>`;
+ $('needsNote').textContent=blind?'You can finish or continue to the questionnaire at any point.':result.valid?'✓ Core needs and activity rules met':result.missing.length+' core uses still in the tray · '+result.issues.length+' rule issues';
+ $('carbonStat').innerHTML=blind?'<span class="blind-value">Hidden while unaided</span>':`${fmt(result.emissions)}<span>kg CO₂e</span>`;
+ $('powerStat').innerHTML=blind?'<span class="blind-value">Hidden while unaided</span>':`${fmt(result.peak)}<span>kW slot average</span>`;
+ $('energyStat').innerHTML=blind?'<span class="blind-value">Hidden while unaided</span>':`${fmt(result.energy)}<span>kWh</span>`;
+ $('powerCard').classList.toggle('red-signal',!blind&&result.peak>POWER_TARGET);$('powerNote').textContent=blind?'No demand feedback in this step.':result.peak>POWER_TARGET?'Above the example 4 kW goal. Try spreading larger uses.':'Within the example 4 kW goal. Several small uses may still run together.';
+ $('carbonNote').textContent=blind?'No sustainability feedback in this step.':'Lower depends on both energy used and the intensity of the chosen periods.';
+ $('constraintBox').classList.toggle('bad',!blind&&result.issues.length>0);
+ $('constraintBox').textContent=blind?'Unaided: only ordinary placement feedback is shown. Your energy outcomes are held until you save this step.':result.issues.length?result.issues.slice(0,2).map(x=>x.message).join(' '):result.missing.length?'Aim to include the core uses. Extras are optional. An unfinished plan can still be saved.':'✓ Needs met. Explore a different valid solution; there is no single required arrangement.';
+ $('periodSignal').innerHTML=INTENSITY.map((v,i)=>`<div class="period-cue ${v<=.3?'green':v>=.625?'red':'amber'}"><strong>${v<=.3?'LOWER':v>=.625?'HIGHER':'MEDIUM'}</strong><span>${SLOT_LABELS[i]}</span></div>`).join('');
+ $('profileChart').innerHTML=INTENSITY.map((v,i)=>`<div class="profile-bar ${v<=.3?'green':v>=.625?'red':'amber'}" style="height:${v/.8*100}%" title="${SLOT_LABELS[i]} · illustrative ${v} kg CO₂e/kWh"></div>`).join('');
+ const scale=Math.max(7,result.peak);$('demandChart').style.setProperty('--target-position',`${POWER_TARGET/scale*100}%`);$('demandChart').innerHTML=result.load.map((v,i)=>`<div class="demand-bar ${v>POWER_TARGET?'over':''}" style="height:${Math.max(2,v/scale*100)}%" title="${SLOT_LABELS[i]} · ${fmt(v)} kW average"></div>`).join('');
+ renderSummary();
 }
-function renderComparison(result){
-  const box=$('comparison');box.hidden=!state.baseline||state.mode==='blind';if(box.hidden)return;
-  const first=evaluate(state.baseline.schedule);
-  const sameUses=state.baseline.schedule.map(p=>p.id).sort().join(',')===state.schedule.map(p=>p.id).sort().join(',');
-  const comparable=first.valid&&result.valid&&sameUses;
-  const change=first.emissions-result.emissions;
-  box.innerHTML=`<strong>Your first run stays saved.</strong><br>First plan: ${fmt(first.emissions)} kg CO₂e · ${fmt(first.peak)} kW highest slot average · ${first.valid?'all needs met':'incomplete or timing rules not met'}.<br>Current plan: ${fmt(result.emissions)} kg CO₂e · ${fmt(result.peak)} kW highest slot average.<br>${comparable?`${change>=0?'Lower':'Higher'} modelled emissions by ${fmt(Math.abs(change))} kg CO₂e (${fmt(Math.abs(change)/first.emissions*100,1)}%). Both complete schedules use ${fmt(result.energy,3)} kWh including fixed background loads.`:'Use the same activities when comparing timing. Added or removed extras also change total energy. Unfinished plans remain recorded.'}<br><span class="small-note">This is a before-and-after revision. Practice and the revealed information can both contribute.</span>`;
+function statusLabel(run){return run.metrics.valid?'Needs met':run.metrics.complete?'Rules not met':'Unfinished plan';}
+function renderSummary(){
+ const box=$('comparison');box.hidden=state.phase!=='complete';if(box.hidden)return;
+ const items=[['First unaided',state.baseline],['Guided practice',state.guided],['Final unaided',state.final]];
+ box.innerHTML='<h2>Your three saved plans</h2><div class="result-grid">'+items.map(([label,run])=>`<article><h3>${label}</h3><strong>${fmt(run.metrics.emissions)} <small>kg CO₂e</small></strong><p>${fmt(run.metrics.peak)} kW highest slot average<br>${fmt(run.metrics.energy)} kWh</p><span class="result-status ${run.metrics.valid?'ok':'incomplete'}">${statusLabel(run)}</span></article>`).join('')+'</div>';
+ const c=comparison(state.baseline,state.final),p=document.createElement('p');p.textContent=c.comparable?`With the same activities, your final unaided plan has ${fmt(Math.abs(c.emissionsSaved))} kg CO₂e ${c.emissionsSaved>=0?'lower':'higher'} modelled emissions than the first. Both use ${fmt(c.energy)} kWh. This is an immediate practice check, not a test of lasting learning.`:c.reason+' The original plans are kept as observed; no like-for-like improvement score is shown.';box.append(p);
 }
-function render(){const result=evaluate(state.schedule);renderLibrary();renderHint();renderEvents(result);renderFeedback(result);$('participant').value=state.participant;requestAnimationFrame(()=>notifyParent());}
-function openEditor(id){
-  editing=id;const task=BY_ID[id],placement=state.schedule.find(p=>p.id===id);
-  $('editorTitle').textContent=task.name;$('editorRule').textContent=task.rule+'. '+task.note;
-  $('startSelect').innerHTML=Array.from({length:SLOTS-task.duration+1},(_,s)=>`<option value="${s}">${SLOT_LABELS[s]} · ${time(s)}</option>`).join('');
-  $('laneSelect').innerHTML=Array.from({length:LANES},(_,i)=>`<option value="${i}" ${i===2&&!task.unattended?'disabled':''}>${LANE_META[i].name}</option>`).join('');
-  $('startSelect').value=placement?.start??task.fixed??task.windows[0][0];$('laneSelect').value=placement?.lane??task.lane;
-  $('removeTask').disabled=!placement;$('editDialog').showModal();
+function render(){dragUI.beforeRender();renderPhase();renderLibrary();hint();const result=evaluate(state.schedule);renderEvents(result);renderFeedback(result);requestAnimationFrame(()=>notifyParent());}
+function nextStep(){
+ if(state.phase==='complete'){notifyParent('request-questionnaire');if(window.parent===window)toast('Open the participant portal to complete the questionnaire.');return;}
+ dragUI.beforeRender();const from=state.phase;state=advanceSession(state);selected=null;lastReason='';record('learning-step-saved',{from,to:state.phase});render();
+ notifyParent(state.phase==='complete'?'prototype-complete':'learning-step-changed');$('phaseTitle').scrollIntoView({behavior:'smooth',block:'start'});
 }
-function captureBaseline(){
-  if(state.baseline){toast('The first run is already saved and will not be overwritten. Export it or start a new participant session.');return;}
-  state.baseline={at:new Date().toISOString(),schedule:clone(state.schedule),metrics:evaluate(state.schedule),source:'online-unaided-grid',phase:state.phase};
-  record('baseline-frozen',{baseline:clone(state.baseline)});state.mode='feedback';state.phase='guided';persist();render();document.getElementById('roundBanner').textContent='ROUND 2 · Your first plan is saved. Use the feedback to improve timing while meeting every household need.';notifyParent('baseline-saved');
-  toast('First run saved. Feedback is now visible. Move a few tokens to explore the feedback, or continue to the questionnaire.');
-}
-function exportSession(){
-  record('export-requested');const payload={...clone(state),profile:{kind:'illustrative-not-live',unit:'kgCO2e/kWh',broadSlotIntensity:INTENSITY},tasks:clone(TASKS),currentMetrics:evaluate(state.schedule),researchNote:'Paper-first plus digital guided revision. Order, learning, information and medium are confounded; do not claim an isolated causal feedback effect.'};
-  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`daylight-${state.participant}-${new Date().toISOString().replace(/[:.]/g,'-')}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Session exported. Keep the original JSON as raw study evidence.');
-}
-$('applyEdit').addEventListener('click',()=>{if(place(editing,Number($('startSelect').value),Number($('laneSelect').value)))$('editDialog').close();});
-$('removeTask').addEventListener('click',()=>{state.schedule=state.schedule.filter(p=>p.id!==editing);record('remove',{id:editing});$('editDialog').close();render();});
-$('closeEditor').addEventListener('click',()=>$('editDialog').close());
-$('helpButton').addEventListener('click',()=>$('helpDialog').showModal());
-for(const id of ['closeHelp','startPlaying'])$(id).addEventListener('click',()=>$('helpDialog').close());
-$('feedbackMode').addEventListener('click',()=>{state.mode='feedback';record('feedback-mode');render();});
-$('blindMode').addEventListener('click',()=>{state.mode='blind';state.phase='unaided';record('unaided-mode');render();});
-$('exampleButton').addEventListener('click',()=>{if(state.participant!=='TEST'){toast('Use TEST to explore an example. Participant sessions start with their own plan.');return;}if(state.schedule.length&&!confirm('Replace the working grid with an example? Existing events and saved runs remain in the session export.'))return;state.schedule=clone(EXAMPLE);record('load-example');render();toast('Illustrative example loaded. Do not use example data as participant evidence.');});
-$('resetButton').addEventListener('click',()=>{if(state.schedule.length&&!confirm('Clear the working grid? The original actions and saved first run remain in your export.'))return;record('before-clear');state.schedule=[];selected=null;record('clear');render();});
-$('captureButton').addEventListener('click',captureBaseline);
-$('guidedButton').addEventListener('click',()=>{if(!state.baseline)return;state.schedule=clone(state.baseline.schedule);state.mode='feedback';state.phase='guided';record('guided-revision-start');render();toast('Revise your first plan with live feedback. Its original version stays saved.');});
-$('finishButton').addEventListener('click',()=>{if(state.mode==='blind'){captureBaseline();return;}const metrics=evaluate(state.schedule);const run={at:new Date().toISOString(),phase:state.phase,mode:state.mode,schedule:clone(state.schedule),metrics};state.runs.push(run);record('finish-run',{run});render();notifyParent('prototype-complete');document.getElementById('roundBanner').textContent='PLAN SAVED · Your current version is saved, including any unmet rules. Use Continue to questionnaire above the planner.';toast('Version saved. Continue to feedback whenever you are ready.');});
-$('exportButton').addEventListener('click',exportSession);
-$('participant').addEventListener('change',event=>{
-  const code=event.target.value;
-  if(state.events.length&&!confirm('Start a new participant session? Export the current session first if needed. A browser-local archive will also be kept.')){event.target.value=state.participant;return;}
-  try{const archive=JSON.parse(localStorage.getItem(KEY+'-archive')||'[]');archive.push(clone(state));localStorage.setItem(KEY+'-archive',JSON.stringify(archive));}catch{}
-  state=fresh(code);selected=null;record('new-session');render();
-});
-buildGrid();if(!state.events.length)record('session-opened');render();
-new ResizeObserver(()=>renderEvents(evaluate(state.schedule))).observe($('gridBody'));
-// Exported for a researcher to retrieve an existing local session, not for cloud storage.
+function openEditor(id){if(!isEditing())return;editing=id;const t=BY_ID[id],p=state.schedule.find(p=>p.id===id);$('editorTitle').textContent=t.name;$('editorRule').textContent=duration(t)+' · '+t.rule;
+ $('startSelect').innerHTML=Array.from({length:SLOTS-t.duration+1},(_,s)=>`<option value="${s}">${SLOT_LABELS[s]} · ${time(s)}</option>`).join('');$('laneSelect').innerHTML=LANE_META.map((l,i)=>`<option value="${i}" ${i===2&&!t.unattended?'disabled':''}>${l.name}</option>`).join('');$('startSelect').value=p?.start??t.windows[0][0];$('laneSelect').value=p?.lane??t.lane;$('removeTask').disabled=!p;$('editDialog').showModal();}
+$('applyEdit').onclick=()=>{if(place(editing,+$('startSelect').value,+$('laneSelect').value))$('editDialog').close();};$('removeTask').onclick=()=>{removeTile(editing,'editor');$('editDialog').close();};$('closeEditor').onclick=()=>$('editDialog').close();
+for(const id of ['stageNext','finishButton'])$(id).onclick=nextStep;
+$('resetButton').onclick=()=>{if(!isEditing())return;if(state.schedule.length&&!confirm('Return every tile from this current plan to the tray? Saved earlier steps stay preserved.'))return;state.schedule=[];selected=null;record('clear-current-step');render();};
+$('testExample').onclick=()=>{if(!IS_TEST||!isEditing())return;state.schedule=clone(EXAMPLE.filter(p=>state.phase!=='final'||state.finalPool.includes(p.id)));record('test-example');render();};
+buildGrid();if(!state.events.length)record('demonstration-started',{demoVersion:DEMO_VERSION});render();
+let lastWidth=$('gridBody').clientWidth;new ResizeObserver(entries=>{const width=entries[0].contentRect.width;if(Math.abs(width-lastWidth)>.5){lastWidth=width;dragUI.beforeRender();renderEvents(evaluate(state.schedule));}}).observe($('gridBody'));
 window.daylight={getSession:()=>clone(state)};
-if(state.baseline)document.getElementById('roundBanner').textContent='ROUND 2 · Your first plan is saved. Revise with feedback, then finish and save.';
-notifyParent(state.runs.length?'prototype-complete':'prototype-update');
-if(IS_TEST){const b=document.createElement('button');b.textContent='TEST ONLY: load example';b.style.cssText='margin:8px;padding:10px';b.addEventListener('click',()=>{state.schedule=clone(EXAMPLE);record('test-example');render();});document.getElementById('roundBanner').append(b);}
