@@ -1,4 +1,4 @@
-import {API_URL,VERSION,INFO_VERSION} from './config.mjs?v=learning-v4';
+import {API_URL,VERSION,INFO_VERSION} from './config.mjs?v=bowl-v5';
 const $=id=>document.getElementById(id);
 const TEST=new URLSearchParams(location.search).get('test')==='1';
 const TEST_RUN=TEST?new URLSearchParams(location.search).get('run'):null;
@@ -41,9 +41,9 @@ function buildForms(content){
  content.susItems.forEach((item,i)=>{const row=document.createElement('div');row.className='sus-row';const field=document.createElement('fieldset'),legend=document.createElement('legend');legend.textContent=(i+1)+'. '+item;field.append(legend);const scale=document.createElement('div');scale.className='scale';for(let n=1;n<=5;n++){const label=document.createElement('label'),input=document.createElement('input');input.type='radio';input.name='sus'+i;input.value=n;input.setAttribute('aria-label',`${n}${n===1?' Strongly disagree':n===5?' Strongly agree':''}`);label.append(input,document.createTextNode(n));scale.append(label);}const skip=document.createElement('label');skip.className='skip-answer';const input=document.createElement('input');input.type='radio';input.name='sus'+i;input.value='';skip.append(input,document.createTextNode('Skip'));scale.append(skip);field.append(scale);const anchors=document.createElement('div');anchors.className='scale-anchors';anchors.innerHTML='<span>1 · Strongly disagree</span><span>5 · Strongly agree</span>';field.append(anchors);row.append(field);$('susFields').append(row);});
 }
 function loadPlanner(){
- const src='prototype/?board=learning-v4&session='+encodeURIComponent(state.id)+(TEST||state.serverTest?'&test=1':'');
+ const src='prototype/?board=bowl-v5&session='+encodeURIComponent(state.id)+(TEST||state.serverTest?'&test=1':'');
  if(!$('planner').getAttribute('src'))$('planner').src=src;
- if(state.prototype&&state.prototype.version!=='daylight-three-lanes-2026-11-02-v2'){state.previousPrototypeVersions??=[];state.previousPrototypeVersions.push(state.prototype);state.prototype=null;event('prototype-model-changed',{to:'daylight-three-lanes-2026-11-02-v2'});}
+ if(state.prototype&&state.prototype.version!=='daylight-bowl-2026-11-03-v5'){state.previousPrototypeVersions??=[];state.previousPrototypeVersions.push(state.prototype);state.prototype=null;event('prototype-model-changed',{to:'daylight-bowl-2026-11-03-v5'});}
  $('toFeedback').disabled=false;
 }
 const routeNames={digital:'Online prototype',physical:'Physical prototype with researcher',demonstration:'Researcher-led demonstration',none:'No prototype experience'};
@@ -83,8 +83,7 @@ window.addEventListener('message',e=>{
  if(e.origin!==location.origin||e.source!==$('planner').contentWindow||e.data?.source!=='daylight-prototype'||!state.id||state.experience!=='digital'||state.stage!=='prototype')return;
  const p=e.data.state;if(!Array.isArray(p?.schedule)||!Array.isArray(p?.events))return;
  state.prototype=p;if(Number.isFinite(e.data.height))$('planner').style.height=Math.min(2600,Math.max(900,e.data.height+20))+'px';persist();scheduleSave();
- const labels={initial:['1 / 3 · First unaided plan','Energy cues and coaching are off. Save this step to begin guided practice.'],guided:['2 / 3 · Guided practice','Learn with the visible cues, then advance to a fresh unaided plan.'],final:['3 / 3 · Final unaided try','Use what you learned. The cues are hidden until this step is saved.'],complete:['Three steps saved','Review your results, then continue to the questionnaire.']};
- const label=labels[p.phase]||['Explore the prototype','Continue whenever you are ready.'];$('taskHeading').textContent=label[0];$('taskNote').textContent=label[1];
+ const dayLabel=p.phase==='complete'?'Three days and check-ins saved':`Day ${(p.roundIndex||0)+1} / 3 · ${p.phase==='guided'?'aided practice':'unaided'} · ${p.substep||'draw'}`;$('taskHeading').textContent=dayLabel;$('taskNote').textContent=p.phase==='complete'?'Review the different days, then continue to the final questionnaire.':'Draw today’s mix, arrange its tasks, then pause for an optional short check-in. You can leave for the questionnaire at any point.';
  if(e.data.type==='request-questionnaire')goToFeedback();
 
 });

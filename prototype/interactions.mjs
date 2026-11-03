@@ -1,5 +1,5 @@
-import {SLOTS,BY_ID,LANE_META,SLOT_LABELS} from './engine.mjs?v=learning-v4';
-import {grabOffset,hitTarget,dropState,backgroundTracks} from './drag-model.mjs?v=learning-v4';
+import {SLOTS,BY_ID,LANE_META,SLOT_LABELS} from './engine.mjs?v=bowl-v5';
+import {grabOffset,hitTarget,dropState,backgroundTracks} from './drag-model.mjs?v=bowl-v5';
 export function createInteractions({getState,getSelected,setSelected,place,remove,record,hint}){
  const grid=document.getElementById('gridBody'),library=document.querySelector('.library'),zone=document.getElementById('removeZone'),preview=document.createElement('div');
  preview.className='drop-preview';preview.hidden=true;preview.setAttribute('aria-hidden','true');grid.append(preview);
@@ -38,7 +38,7 @@ export function createInteractions({getState,getSelected,setSelected,place,remov
   drag=null;clean();document.body.classList.remove('drag-active','drag-removing');document.querySelectorAll('.drag-source').forEach(n=>n.classList.remove('drag-source'));zone.classList.remove('over');hint();
  }
  function begin(e,id,placed){
-  if(getState().phase==='complete'){e.preventDefault();return;}
+  if(getState().substep!=='arrange'){e.preventDefault();return;}
   const rect=e.currentTarget.getBoundingClientRect();drag={id,placed,previous:getSelected(),offset:placed?grabOffset(e.clientX,rect.left,rect.width,BY_ID[id].duration):0,committed:false};
   setSelected(id);e.dataTransfer.setData('text/plain',id);e.dataTransfer.effectAllowed='move';e.currentTarget.classList.add('drag-source');document.body.classList.add('drag-active');record('drag-started',{id,from:placed?'board':'tray',grabOffset:drag.offset});hint('Drag onto the board. Drag left into the tray to remove.');
  }
@@ -47,7 +47,7 @@ export function createInteractions({getState,getSelected,setSelected,place,remov
  grid.addEventListener('dragleave',e=>{if(!grid.contains(e.relatedTarget)){clean();hint();}});
  grid.addEventListener('mousemove',e=>{if(drag)return;if(getSelected())show(e);});
  grid.addEventListener('mouseleave',()=>{if(!drag){clean();hint();}});
- grid.addEventListener('click',e=>{if(Date.now()<ignoreUntil||!getSelected()||getState().phase==='complete')return;const p=target(e);if(p){clean();place(getSelected(),p.start,p.lane,'click');}});
+ grid.addEventListener('click',e=>{if(Date.now()<ignoreUntil||!getSelected()||getState().substep!=='arrange')return;const p=target(e);if(p){clean();place(getSelected(),p.start,p.lane,'click');}});
  library.addEventListener('dragover',e=>{if(!drag)return;e.preventDefault();clean();zone.classList.add('over');document.body.classList.add('drag-removing');e.dataTransfer.dropEffect='move';hint(drag.placed?'Release on the left to return this tile to the tray.':'Release to leave this tile in the tray.');});
  library.addEventListener('dragleave',e=>{if(!library.contains(e.relatedTarget)){zone.classList.remove('over');document.body.classList.remove('drag-removing');}});
  library.addEventListener('drop',e=>{if(!drag)return;e.preventDefault();const {id,placed}=drag;drag.committed=true;ignoreUntil=Date.now()+200;end(true);setSelected(null);if(placed)remove(id,'drag-left');else hint('Tile returned to the tray.');});

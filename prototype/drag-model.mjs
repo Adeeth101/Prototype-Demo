@@ -1,4 +1,4 @@
-import {SLOTS,LANE_META,BY_ID,insideWindow,canPlace} from './engine.mjs?v=learning-v4';
+import {SLOTS,LANE_META,BY_ID,insideWindow,canPlace} from './engine.mjs?v=bowl-v5';
 export function grabOffset(clientX,left,width,duration){return Math.max(0,Math.min(duration-1,Math.floor((clientX-left)/width*duration)));}
 export function hitTarget(x,y,rect,labelWidth,laneHeights,offset=0){
  const localX=x-rect.left-labelWidth,localY=y-rect.top,width=rect.width-labelWidth;

@@ -1,22 +1,27 @@
 import assert from 'node:assert/strict';
-import {newSession,advanceSession,comparison,DEMO_VERSION} from './prototype/learning.mjs';
-import {EXAMPLE,BY_ID,SLOTS} from './prototype/engine.mjs';
-import {grabOffset,hitTarget,dropState,backgroundTracks} from './prototype/drag-model.mjs';
+import {newSession,currentDay,drawTask,drawAll,startPlan,savePlan,submitCheckin,comparison,CHECKIN_ITEMS} from './prototype/learning.mjs?v=bowl-v5';
+import {setScenario} from './prototype/engine.mjs?v=bowl-v5';
+import {grabOffset,hitTarget,dropState,backgroundTracks} from './prototype/drag-model.mjs?v=bowl-v5';
 const clone=x=>JSON.parse(JSON.stringify(x));
-let initial=newSession('2026-11-03T00:00:00Z');assert.equal(initial.mode,'blind');assert.equal(initial.phase,'initial');assert.equal(initial.demoVersion,DEMO_VERSION);
-initial.schedule=clone(EXAMPLE);const original=JSON.stringify(initial);
-let guided=advanceSession(initial,'2026-11-03T00:01:00Z');assert.equal(JSON.stringify(initial),original,'No earlier state/snapshot mutation');assert.equal(guided.phase,'guided');assert.equal(guided.mode,'feedback');assert.equal(guided.runs.length,1);assert.equal(guided.baseline.helpShown,false);
-guided.schedule=guided.schedule.map(p=>({...p,start:({wash:4,dry:5,dish:6,render:5,heat:5,lights:7,ev:5,phone:6})[p.id]??p.start}));
-const practice=clone(guided.schedule),final=advanceSession(guided,'2026-11-03T00:02:00Z');assert.equal(final.phase,'final');assert.equal(final.mode,'blind');assert.equal(final.schedule.length,0,'Fresh unaided board');assert.equal(final.guided.helpShown,true);assert(final.finalPool.includes('ev'));assert(final.finalPool.includes('breakfast'));
-final.schedule=practice;const complete=advanceSession(final,'2026-11-03T00:03:00Z');assert.equal(complete.phase,'complete');assert.equal(complete.runs.length,3);assert.equal(complete.final.helpShown,false);assert.equal(complete.runs.map(r=>r.phase).join(','),'initial,guided,final');assert(comparison(complete.baseline,complete.final).comparable);assert(comparison(complete.baseline,complete.final).emissionsSaved>0);
-assert.equal(advanceSession(complete).runs.length,3,'Finishing twice cannot overwrite saved steps');
-const partial=advanceSession(newSession());assert(!partial.baseline.metrics.complete);assert.equal(partial.phase,'guided','Incomplete/empty stages do not trap participant');
-assert(!comparison({...complete.baseline,schedule:complete.baseline.schedule.filter(p=>p.id!=='ev')},complete.final).comparable,'Different activity sets not scored as timing gains');
-assert.equal(grabOffset(170,100,100,2),1);assert.equal(grabOffset(110,100,100,2),0);
-const rect={left:100,top:50,width:700},heights=[92,92,158];
-assert.equal(hitTarget(100+100+600/12*6+3,50+25,rect,100,heights,1).start,5,'Preserve second-slot grip');
-assert.equal(hitTarget(250,50+190,rect,100,heights).lane,2);assert.equal(hitTarget(150,100,rect,100,heights),null,'Left of slots is not an accidental placement');assert.equal(hitTarget(850,100,rect,100,heights),null);
-assert.equal(dropState([], 'study',SLOTS-1,0).allowed,false,'Full long tile must fit');assert.equal(dropState([], 'dinner',9,2).allowed,false);assert.equal(dropState([{id:'study',start:5,lane:0}],'work',6,0).allowed,false);
-assert.equal(dropState([], 'breakfast',8,0,false).tone,'fits','Unaided preview does not leak timing hints');assert.equal(dropState([], 'breakfast',8,0,true).tone,'warning');assert.equal(dropState([], 'wash',5,2,true).allowed,true);
-const tracks=backgroundTracks([{id:'render',start:4,lane:2},{id:'ev',start:5,lane:2},{id:'phone',start:6,lane:2}]);assert.equal(tracks.map.get('render'),0);assert.equal(tracks.map.get('ev'),1);assert.equal(tracks.map.get('phone'),0,'Free subtrack reused');
-console.log('PASS: explicit blind/aided/blind phases; fresh final board; immutable phase records; fixed activity pool; partial exits; fair comparison guards; two-slot grip/footprints; attention/collision/boundary cues; no unaided hint leakage; stacked background hit geometry.');
+let s=newSession('2026-11-03T00:00:00Z',3900);assert.equal(s.substep,'draw');assert.equal(s.mode,'blind');assert.throws(()=>startPlan(s),TypeError);
+const before=JSON.stringify(s);s=drawTask(s,0,7);assert.equal(JSON.parse(before).drawn.length,0,'Previous state immutable');assert.equal(s.drawn.length,1);assert.equal(drawTask(s,0,7).drawn.length,1,'Same covered pick cannot be used twice');
+s=drawAll(s);assert.equal(s.drawn.length,10);assert.equal(new Set(s.drawLog.map(p=>p.lane+':'+p.position)).size,10);assert.deepEqual([0,1,2].map(l=>s.drawLog.filter(p=>p.lane===l).length),[3,3,4]);
+let firstRun;
+for(let round=0;round<3;round++){
+ if(round>0){assert.equal(s.schedule.length,0);assert.equal(s.drawn.length,0);s=drawAll(s);}
+ s=startPlan(s);assert.equal(s.substep,'arrange');assert.equal(s.mode,round===1?'feedback':'blind');s.schedule=clone(currentDay(s).witness);
+ const original=JSON.stringify(s);let saved=savePlan(s);assert.equal(JSON.stringify(s),original);assert.equal(saved.substep,'checkin');assert.equal(saved.mode,'blind');assert.equal(saved.runs.length,round+1);assert.equal(savePlan(saved).runs.length,round+1,'No duplicate run');
+ if(round===0)firstRun=clone(saved.runs[0]);
+ const answers=round===0?{}:{confidence:4,effort:2,convenience:5,willingness:3,quiz:currentDay(saved).quiz.correctId,comment:'Synthetic test'};
+ s=submitCheckin(saved,answers);assert.deepEqual(s.runs[0],firstRun,'Later draws/check-ins cannot mutate original plan');
+}
+assert.equal(s.phase,'complete');assert.equal(s.substep,'summary');assert.equal(s.runs.length,3);assert.equal(s.checkins.length,3);assert.deepEqual(s.runs.map(r=>r.helpShown),[false,true,false]);
+assert.equal(s.checkins[0].ratings.confidence,null);assert.equal(s.checkins[0].quiz.correct,null);assert.equal(s.checkins[1].quiz.correct,true);assert.equal(s.checkins[2].quiz.construct,'carbon-intensity application');assert.equal(s.checkins[1].quiz.construct,'load spreading while retaining needs');assert.equal(CHECKIN_ITEMS.length,4);
+assert.equal(submitCheckin(s).checkins.length,3);assert.equal(comparison(s.baseline,s.final).comparable,false,'Different-day totals must not become a learning gain');
+let partial=startPlan(drawAll(newSession(undefined,42)));partial=savePlan(partial);assert(!partial.runs[0].metrics.valid);assert.equal(submitCheckin(partial).roundIndex,1,'Unfinished plans and skipped items never trap participant');
+const day=s.rounds[0];setScenario(day);const long=day.tasks.find(t=>t.duration===2),attended=day.tasks.find(t=>!t.unattended);assert.equal(grabOffset(170,100,100,2),1);
+const rect={left:100,top:50,width:700},heights=[92,92,158];assert.equal(hitTarget(503,75,rect,100,heights,1).start,5);assert.equal(hitTarget(150,100,rect,100,heights),null);
+assert(!dropState([],long.id,11,long.lane).allowed);assert(!dropState([],attended.id,5,2).allowed);
+const t=day.tasks.find(t=>t.windows[0][0]>0),badStart=0;assert.equal(dropState([],t.id,badStart,t.lane,false).tone,'fits');assert.equal(dropState([],t.id,badStart,t.lane,true).tone,'warning','Timing hints only aided');
+assert(backgroundTracks(day.witness).count>=1);
+console.log('PASS: draw quotas/position handling/resume data; draw -> arrange -> optional check-in x3; phase and help exposure; immutable original days; no duplicate submission; null skips; separate custom constructs/pattern items; no raw cross-day learning gain; partial exits; long-tile drag and unaided cue guards.');

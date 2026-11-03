@@ -1,36 +1,24 @@
 import assert from 'node:assert/strict';
-import {VERSION,SLOTS,LANES,LANE_META,BASE_KW,BASE_ENERGY,STEP_HOURS,TASKS,CORE_TASKS,TOTAL_ENERGY,EXAMPLE,evaluate,canPlace,insideWindow,INTENSITY,MODEL} from './prototype/engine.mjs';
-assert.equal(SLOTS,12);assert.equal(LANES,3);assert.equal(TASKS.length,18);assert.equal(CORE_TASKS.length,10);assert.equal(INTENSITY.length,12);
-assert(TASKS.some(t=>t.duration===2));assert(TASKS.every(t=>t.duration===1||t.duration===2));
-const empty=evaluate([]);assert(Math.abs(empty.energy-BASE_ENERGY)<1e-9);assert(empty.load.every(x=>x===BASE_KW));assert.equal(empty.concurrentSlots,0);
-const core=EXAMPLE.filter(p=>TASKS.find(t=>t.id===p.id).required),first=evaluate(EXAMPLE);assert(first.valid,JSON.stringify(first.issues));assert(evaluate(core).valid,'Optional extras are not required');
-assert(Math.abs(evaluate(core).energy-TOTAL_ENERGY)<1e-9);
-const revised=EXAMPLE.map(p=>({...p,...({wash:{start:4,lane:2},dry:{start:5,lane:2},dish:{start:6,lane:2},render:{start:5,lane:2},heat:{start:5,lane:1},lights:{start:7,lane:2},ev:{start:5,lane:2},phone:{start:6,lane:2}}[p.id]||{})}));
-const second=evaluate(revised);assert(second.valid,JSON.stringify(second.issues));assert(Math.abs(first.energy-second.energy)<1e-9);assert(second.emissions<first.emissions);assert(second.peak<first.peak);
-assert(first.maxConcurrentActivities>=5,'Background appliances must support real concurrency');
-assert(canPlace([{id:'wash',start:5,lane:2}],'ev',5,2),'Background overlap allowed');
-assert(!canPlace([{id:'study',start:5,lane:0}],'work',6,0),'Two-slot attention collision');
-assert(canPlace([{id:'study',start:5,lane:0}],'work',7,0),'Adjacent two-slot blocks fit');
-assert(!canPlace([],'work',11,0),'Two-slot block cannot run past board');assert(canPlace([],'work',10,0));assert(!canPlace([],'work',5,3));
-assert(evaluate([{id:'render',start:5,lane:2},{id:'ev',start:5,lane:2}]).issues.every(i=>i.kind!=='overlap'));
-assert(!canPlace([],'dinner',9,2),'Cooking cannot be classified as unattended');
-assert(evaluate([{id:'study',start:5,lane:0},{id:'work',start:6,lane:0}]).issues.some(i=>i.kind==='overlap'));
-assert(evaluate([{id:'wash',start:5,lane:2},{id:'dry',start:5,lane:2}]).issues.some(i=>i.kind==='sequence'));
-assert(!evaluate(core.filter(p=>p.id!=='breakfast')).complete);assert(!evaluate([...core,core[0]]).valid);
-for(const task of TASKS){const r=evaluate([{id:task.id,start:4,lane:2}]);assert(Math.abs(r.energy-BASE_ENERGY-task.energy)<1e-9);for(let i=4;i<4+task.duration;i++)assert(Math.abs(r.load[i]-BASE_KW-task.energy/task.duration/STEP_HOURS)<1e-9);}
-const crossing=evaluate([{id:'study',start:4,lane:2}]);assert(Math.abs(crossing.emissions-empty.emissions-.16/2*(INTENSITY[4]+INTENSITY[5]))<1e-9,'Long uses sample both grid intensities');
-const changedLane=evaluate(EXAMPLE.map(p=>p.id==='wash'?{...p,lane:1}:p));assert(Math.abs(changedLane.emissions-first.emissions)<1e-9,'Lane meaning must not alter power/carbon');
-let seed=3900;const random=n=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed%n;};
-const signatures=new Set(),outcomes=new Set();
-for(let i=0;i<3000;i++){
- const plan=[];
- for(const t of CORE_TASKS){
-  const before=t.after?plan.find(p=>p.id===t.after):null;
-  const choices=Array.from({length:SLOTS-t.duration+1},(_,s)=>s).filter(s=>insideWindow(t,s)&&canPlace(plan,t.id,s,t.lane)&&(!t.after||before&&s>=before.start+TASKS.find(q=>q.id===t.after).duration)&&(t.id!=='wash'||s<11));
-  if(!choices.length)break;plan.push({id:t.id,start:choices[random(choices.length)],lane:t.lane});
+import {CATALOGUE} from './prototype/catalogue.mjs?v=bowl-v5';
+import {makeRounds} from './prototype/scenarios.mjs?v=bowl-v5';
+import {SLOTS,LANES,BASE_ENERGY,BASE_KW,setScenario,evaluate,canPlace,insideWindow,INTENSITY} from './prototype/engine.mjs?v=bowl-v5';
+assert.equal(CATALOGUE.length,48);assert.equal(new Set(CATALOGUE.map(t=>t.id)).size,48);assert.equal(SLOTS,12);assert.equal(LANES,3);
+for(let lane=0;lane<3;lane++)for(const duration of [1,2])assert.equal(CATALOGUE.filter(t=>t.lane===lane&&t.duration===duration).length,8);
+let checked=0,energies=new Set(),windows=new Set();
+for(let seed=1;seed<=1000;seed++){
+ const days=makeRounds(seed);assert.deepEqual(days,makeRounds(seed),'Seed must reproduce allocation');assert.equal(new Set(days.flatMap(d=>d.tasks.map(t=>t.id))).size,30,'No cross-round repeats');
+ for(const day of days){
+  assert.equal(day.tasks.length,10);assert.deepEqual([0,1,2].map(l=>day.tasks.filter(t=>t.lane===l).length),[3,3,4]);assert.equal(day.tasks.filter(t=>t.duration===2).length,4);
+  const r=evaluate(day.witness,day);assert(r.valid,JSON.stringify(r.issues));assert(Math.abs(r.energy-BASE_ENERGY-day.tasks.reduce((s,t)=>s+t.energy,0))<1e-8);assert(r.timingOpportunityUsed===null||r.timingOpportunityUsed>=0&&r.timingOpportunityUsed<=1);
+  for(const t of day.tasks){const p=day.witness.find(p=>p.id===t.id);assert(insideWindow(t,p.start));if(t.after)assert(day.tasks.some(q=>q.id===t.after));windows.add(t.id+':'+t.windows[0].join('-'));}
+  energies.add(r.energy.toFixed(4));checked++;
  }
- if(plan.length!==CORE_TASKS.length)continue;const r=evaluate(plan);
- assert(r.valid,JSON.stringify(r.issues));assert(Math.abs(r.energy-TOTAL_ENERGY)<1e-9);signatures.add(plan.map(p=>p.start).join(','));outcomes.add(r.emissions.toFixed(4));
 }
-assert(signatures.size>1500);assert(outcomes.size>100);assert.equal(MODEL.lanes.length,3);assert.equal(MODEL.baseLoads.length,2);assert.equal(LANE_META[2].overlap,true);
-console.log(JSON.stringify({passed:true,version:VERSION,lanes:LANE_META.map(l=>l.name),coreUses:CORE_TASKS.length,optionalUses:TASKS.length-CORE_TASKS.length,twoSlotUses:TASKS.filter(t=>t.duration===2).length,baseKWh:BASE_ENERGY,coreDayKWh:TOTAL_ENERGY,distinctValidTimes:signatures.size,outcomes:outcomes.size,exampleMaxConcurrency:first.maxConcurrentActivities,example:{kWh:first.energy,kgCO2e:first.emissions,highestSlotAverageKW:first.peak},revision:{kWh:second.energy,kgCO2e:second.emissions,highestSlotAverageKW:second.peak}},null,2));
+assert(energies.size>100);assert(windows.size>100,'Daily time restrictions must vary');
+const day=makeRounds(3900)[0];setScenario(day);const empty=evaluate([]);assert(Math.abs(empty.energy-BASE_ENERGY)<1e-9);assert(empty.load.every(x=>x===BASE_KW));assert(!empty.complete);
+const long=day.tasks.find(t=>t.duration===2),short=day.tasks.find(t=>t.duration===1),attended=day.tasks.find(t=>!t.unattended),auto=day.tasks.find(t=>t.lane===2);
+assert(!canPlace([],long.id,11,long.lane));assert(!canPlace([],attended.id,5,2));assert(canPlace([{id:auto.id,start:5,lane:2}],day.tasks.find(t=>t.id!==auto.id&&t.lane===2).id,5,2));
+assert(!canPlace([{id:long.id,start:5,lane:0}],short.id,6,0));
+const cross=evaluate([{id:long.id,start:4,lane:long.lane}]);assert(Math.abs(cross.energy-BASE_ENERGY-long.energy)<1e-9);assert(Math.abs(cross.emissions-empty.emissions-long.energy/2*(INTENSITY[4]+INTENSITY[5]))<1e-9);
+assert(!evaluate([...day.witness,day.witness[0]]).valid);assert(!evaluate(day.witness.filter(p=>p.id!==short.id)).complete);
+console.log(JSON.stringify({passed:true,catalogue:48,generatedDaysChecked:checked,balancedMix:[3,3,4],twoSlotTilesPerDay:4,distinctDayEnergyTotals:energies.size,distinctTaskWindows:windows.size,checks:'determinism; quotas; no repeat; generated feasibility; varied windows; energy and split-slot emissions; attention and collision rules; dependencies; independent-bound range'},null,2));
