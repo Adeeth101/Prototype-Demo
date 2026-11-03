@@ -1,8 +1,10 @@
 import {VERSION,LANES,LANE_META,BASE_ENERGY,SLOTS,INTENSITY,SLOT_LABELS,TASKS,BY_ID,POWER_TARGET,time,evaluate,canPlace,setScenario} from './engine.mjs?v=bowl-v5';
 import {DEMO_VERSION,CHECKIN_ITEMS,currentDay,newSession,drawTask,drawAll,startPlan,savePlan,submitCheckin,comparison,clone} from './learning.mjs?v=bowl-v5';
 import {createInteractions} from './interactions.mjs?v=bowl-v5';
+import {clearRetiredDrafts,prototypeKey} from '../storage.mjs?v=placement-fix-v6';
 const $=id=>document.getElementById(id),params=new URLSearchParams(location.search);
-const KEY='daylight-portal-prototype-'+(params.get('session')||'standalone'),IS_TEST=params.get('test')==='1';
+const KEY=prototypeKey(params.get('session')||'standalone'),IS_TEST=params.get('test')==='1';
+try{clearRetiredDrafts(localStorage);}catch{}
 let state=newSession(),selected=null,editing=null,toastTimer,lastReason='',renderedCheckinId=null;
 try{const saved=JSON.parse(localStorage.getItem(KEY));if(saved?.version===VERSION&&saved.demoVersion===DEMO_VERSION)state=saved;else if(saved)state.earlierDemonstrations=[saved];}catch{}
 setScenario(currentDay(state));
@@ -66,7 +68,6 @@ function renderEvents(result){
     const event=document.createElement('button');event.className='event'+(state.mode==='feedback'&&bad.has(p.id)?' invalid':'');event.style.setProperty('--event-color',task.color);
     event.style.left=(labelWidth+available*p.start/SLOTS+2)+'px';event.style.width=(available*task.duration/SLOTS-4)+'px';
     event.style.top=(offsets[p.lane]+(p.lane===2?43+(tracks.get(p.id)||0)*56:22))+'px';
-    const average=INTENSITY.slice(p.start,p.start+task.duration).reduce((a,b)=>a+b,0)/task.duration;event.style.setProperty('--intensity-color',intensityColor(average));
     event.innerHTML=`<strong>${task.short}${task.duration===2?' · 2 slots':''}</strong><small>${state.mode==='feedback'?fmt(task.energy)+' kWh':duration(task)}</small>`;
     event.title=`${task.name}, ${LANE_META[p.lane].name}, ${SLOT_LABELS[p.start]} to ${SLOT_LABELS[p.start+task.duration-1]}, ${duration(task)}. Click to move.`;event.setAttribute('aria-label',event.title);event.draggable=isEditing();
     event.addEventListener('click',e=>{if(dragUI.ignoreClick()||!isEditing())return;if(selected&&e.detail!==0)return;e.stopPropagation();openEditor(task.id);});

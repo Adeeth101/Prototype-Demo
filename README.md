@@ -43,3 +43,9 @@ All powers/intensities are illustrative. Moving the same uses preserves their en
 ## AI assistance
 
 Adith chose the concept and requested the revisions. Codex assisted with design, implementation, custom study instruments, testing and deployment. No actual participant evidence or findings were generated. Coursework disclosure and the full AI-use log are maintained in the private HCI working files.
+
+## Placement regression and clean start - 2026-11-03
+
+A stale undefined colour-helper call interrupted tile rendering after placement. It has been removed. `checks-ui.mjs` now executes the actual app entrypoint/DOM handlers for click/drag placement, two-slot hover, tray return/Undo, complete-day rendering and next-day aided rendering. Run `npm ci` then `npm test`; happy-dom is a development-only test dependency, not used by the live static site. The geometry fixture does not replace visual browser QA.
+
+At the researcher's explicit request, the pre-study test records are reset and a new browser-storage epoch starts. On refresh the page removes only retired Daylight-specific local/session drafts; unrelated site storage is preserved. Data created in the new epoch survives normal refreshes. The protected research service can reset records only with the private researcher key and explicit reset confirmation. Never send that key to the participant page or put it in this public repository.

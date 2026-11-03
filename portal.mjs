@@ -1,8 +1,10 @@
-import {API_URL,VERSION,INFO_VERSION} from './config.mjs?v=bowl-v5';
+import {API_URL,VERSION,INFO_VERSION,DATA_EPOCH} from './config.mjs?v=placement-fix-v6';
+import {clearRetiredDrafts,prototypeKey} from './storage.mjs?v=placement-fix-v6';
 const $=id=>document.getElementById(id);
 const TEST=new URLSearchParams(location.search).get('test')==='1';
 const TEST_RUN=TEST?new URLSearchParams(location.search).get('run'):null;
-const KEY=VERSION+(TEST?'-test'+(TEST_RUN?'-'+TEST_RUN.slice(0,60):''):'-participant');
+const KEY='daylight-portal-'+DATA_EPOCH+'-'+VERSION+(TEST?'-test'+(TEST_RUN?'-'+TEST_RUN.slice(0,60):''):'-participant');
+try{clearRetiredDrafts(sessionStorage);clearRetiredDrafts(localStorage);}catch{}
 const clone=v=>JSON.parse(JSON.stringify(v));
 const empty=()=>({version:VERSION,test:TEST,stage:'welcome',id:null,token:null,code:null,revision:0,events:[],experience:null,prototype:null,questionnaire:null,media:[],savedAt:null});
 let state=empty(),saveTimer,noticeTimer,saving=Promise.resolve(),submitting=false,loadedContent;
@@ -41,7 +43,7 @@ function buildForms(content){
  content.susItems.forEach((item,i)=>{const row=document.createElement('div');row.className='sus-row';const field=document.createElement('fieldset'),legend=document.createElement('legend');legend.textContent=(i+1)+'. '+item;field.append(legend);const scale=document.createElement('div');scale.className='scale';for(let n=1;n<=5;n++){const label=document.createElement('label'),input=document.createElement('input');input.type='radio';input.name='sus'+i;input.value=n;input.setAttribute('aria-label',`${n}${n===1?' Strongly disagree':n===5?' Strongly agree':''}`);label.append(input,document.createTextNode(n));scale.append(label);}const skip=document.createElement('label');skip.className='skip-answer';const input=document.createElement('input');input.type='radio';input.name='sus'+i;input.value='';skip.append(input,document.createTextNode('Skip'));scale.append(skip);field.append(scale);const anchors=document.createElement('div');anchors.className='scale-anchors';anchors.innerHTML='<span>1 · Strongly disagree</span><span>5 · Strongly agree</span>';field.append(anchors);row.append(field);$('susFields').append(row);});
 }
 function loadPlanner(){
- const src='prototype/?board=bowl-v5&session='+encodeURIComponent(state.id)+(TEST||state.serverTest?'&test=1':'');
+ const src='prototype/?board=placement-fix-v6&session='+encodeURIComponent(state.id)+(TEST||state.serverTest?'&test=1':'');
  if(!$('planner').getAttribute('src'))$('planner').src=src;
  if(state.prototype&&state.prototype.version!=='daylight-bowl-2026-11-03-v5'){state.previousPrototypeVersions??=[];state.previousPrototypeVersions.push(state.prototype);state.prototype=null;event('prototype-model-changed',{to:'daylight-bowl-2026-11-03-v5'});}
  $('toFeedback').disabled=false;
@@ -90,8 +92,8 @@ window.addEventListener('message',e=>{
 $('surveyForm').addEventListener('input',()=>updateSurveyDraft());
 $('surveyForm').addEventListener('submit',async e=>{e.preventDefault();if(submitting)return;submitting=true;$('surveySubmit').disabled=true;$('surveyError').textContent='Submitting your responses…';updateSurveyDraft(false);event('questionnaire-submitted');const previous=state.stage;state.stage='complete';try{const r=await saveNow('finish');if(!r.finished)throw Error('Submission was not confirmed. Please retry.');state.savedAt=r.savedAt;show('complete',{save:false});}catch(error){state.stage=previous;persist();$('surveyError').textContent=error.message;}finally{submitting=false;$('surveySubmit').disabled=false;}});
 $('downloadReceipt').addEventListener('click',()=>download({code:state.code,test:state.test,experience:state.experience,savedAt:state.savedAt,contact:'u7623871@anu.edu.au',withdrawBy:'2026-11-05 23:59 AEDT'},'daylight-receipt-'+state.code+'.json'));
-$('newParticipant').addEventListener('click',()=>{if(!confirm('Your submission is saved. Clear this device and return to welcome?'))return;try{localStorage.removeItem('daylight-portal-prototype-'+state.id);sessionStorage.removeItem(KEY);}catch{}location.reload();});
-$('withdraw').addEventListener('click',async()=>{if(!confirm('Delete the website consent and responses for this session? Separate interview recordings or copies must also be withdrawn with Adith.'))return;clearTimeout(saveTimer);$('withdraw').disabled=true;try{await saving.catch(()=>{});await api({action:'withdraw',id:state.id,token:state.token});try{localStorage.removeItem('daylight-portal-prototype-'+state.id);sessionStorage.removeItem(KEY);}catch{}state=empty();show('withdrawn',{save:false});}catch(error){notice(error.message);}finally{$('withdraw').disabled=false;}});
+$('newParticipant').addEventListener('click',()=>{if(!confirm('Your submission is saved. Clear this device and return to welcome?'))return;try{localStorage.removeItem(prototypeKey(state.id));sessionStorage.removeItem(KEY);}catch{}location.reload();});
+$('withdraw').addEventListener('click',async()=>{if(!confirm('Delete the website consent and responses for this session? Separate interview recordings or copies must also be withdrawn with Adith.'))return;clearTimeout(saveTimer);$('withdraw').disabled=true;try{await saving.catch(()=>{});await api({action:'withdraw',id:state.id,token:state.token});try{localStorage.removeItem(prototypeKey(state.id));sessionStorage.removeItem(KEY);}catch{}state=empty();show('withdrawn',{save:false});}catch(error){notice(error.message);}finally{$('withdraw').disabled=false;}});
 $('testFill').addEventListener('click',()=>{if(!TEST)return;const f=$('consentForm');f.elements.name.value='Test Participant';f.elements.uid.value='u0000000';f.elements.eligible.checked=true;f.elements.agreed.checked=true;for(let i=0;i<5;i++)f.querySelector(`[name="media${i}"][value="no"]`).checked=true;});
 $('testBanner').hidden=!TEST;$('testFill').hidden=!TEST;
 try{const response=await fetch('study-content.json');if(!response.ok)throw Error();loadedContent=await response.json();buildForms(loadedContent);show(state.stage,{save:false});}catch{notice('Study questions could not be loaded. Please refresh before continuing.');$('begin').disabled=true;}

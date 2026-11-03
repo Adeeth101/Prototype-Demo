@@ -1,0 +1,7 @@
+{
+  "name": "daylight-prototype-checks",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node checks.mjs && node checks-learning.mjs && node checks-ui.mjs" },
+  "devDependencies": { "happy-dom": "21.0.4" }
+}
