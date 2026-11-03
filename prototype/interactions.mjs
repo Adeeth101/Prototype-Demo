@@ -6,7 +6,7 @@ export function createInteractions({getState,getSelected,setSelected,place,remov
  let drag=null,hoverKey='',ignoreUntil=0,grown=null;
  const labelWidth=()=>parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--lane-label'))||96;
  function clean(){
-  preview.hidden=true;hoverKey='';document.querySelectorAll('.target-cell,.target-header,.target-lane,.source-cell').forEach(n=>n.classList.remove('target-cell','target-header','target-lane','source-cell','blocked','warning'));
+  preview.hidden=true;hoverKey='';document.querySelectorAll('.target-cell,.target-header,.target-lane,.source-cell').forEach(n=>n.classList.remove('target-cell','target-header','target-lane','source-cell','blocked','warning','fits'));
   if(grown){grid.style.height=grown.grid;document.querySelectorAll('.lane')[2].style.height=grown.lane;grown=null;}
  }
  function target(e){return hitTarget(e.clientX,e.clientY,grid.getBoundingClientRect(),labelWidth(),[...document.querySelectorAll('.lane')].map(n=>n.offsetHeight),drag?.offset||0);}

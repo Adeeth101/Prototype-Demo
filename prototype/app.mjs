@@ -43,9 +43,9 @@ function renderLibrary(){
   if(!task.required&&!showExtras&&state.phase!=='final')continue;
   const placed=state.schedule.some(p=>p.id===task.id),button=document.createElement('button');
   button.className='task-card'+(placed?' placed':'')+(selected===task.id?' active':'');button.style.setProperty('--task-color',task.color);button.draggable=isEditing();button.disabled=!isEditing();
-  button.setAttribute('aria-pressed',String(selected===task.id));
+  button.setAttribute('aria-pressed',String(selected===task.id));button.dataset.id=task.id;
   button.innerHTML=`<span class="tile-grip" aria-hidden="true">⠿</span><span class="task-title">${task.name}<b>${placed?'✓':'+'}</b></span><span class="task-meta">${duration(task)}${state.mode==='feedback'?' · '+fmt(task.energy)+' kWh':''}</span><span class="task-rule">${LANE_META[task.lane].name}${task.required?'':' · optional'} · ${task.rule}</span>`;
-  button.title='Drag to the board. '+task.rule;button.addEventListener('click',()=>{if(dragUI.ignoreClick())return;dragUI.beforeRender();selected=selected===task.id?null:task.id;renderLibrary();hint();});
+  button.title='Drag to the board. '+task.rule;button.addEventListener('click',()=>{if(dragUI.ignoreClick())return;dragUI.beforeRender();selected=selected===task.id?null:task.id;document.querySelectorAll('.task-card').forEach(n=>{n.classList.toggle('active',n.dataset.id===selected);n.setAttribute('aria-pressed',String(n.dataset.id===selected));});hint();});
   button.addEventListener('dblclick',()=>openEditor(task.id));button.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.shiftKey){e.preventDefault();openEditor(task.id);}});dragUI.wireTile(button,task.id,false);$('taskLibrary').append(button);
  }
  if(state.phase!=='final'){const more=document.createElement('button');more.className='extras-button';more.textContent=showExtras?'Hide optional extras':'＋ Optional extra activities (8)';more.onclick=()=>{showExtras=!showExtras;renderLibrary();};$('taskLibrary').append(more);}
